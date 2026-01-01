@@ -571,25 +571,34 @@ function ui.tile(index, name, value, ui_index, lock, custom)
       if name then
           if name == "DEV" then
             --print ("name", name)
-            local disp_value = "--" 
-            if value < 5 then 
-                disp_value = value 
-            elseif value == 5 and params:get("takt_jf") == 2 then 
-                disp_value = "JF" 
-            elseif value == 6 and params:get("takt_wsyn") == 2 then 
-                disp_value = "W/" 
-            elseif value == 7 and params:get("takt_crow") == 2 then 
-                disp_value = "CROW" 
-            elseif value == 8 and params:get("takt_crow") == 3 then 
-                disp_value = "CRW12" 
-            elseif value == 9 and params:get("takt_crow") == 3 then 
-                disp_value = "CRW34" 
-            elseif value == 10 and params:get("takt_crow") == 4 then 
-                disp_value = "JFCW" 
+            local disp_value = "--"
+            if value < 5 then
+                disp_value = value
+            elseif value == 5 and params:get("takt_jf") == 2 then
+                disp_value = "JF"
+            elseif value == 6 and params:get("takt_wsyn") == 2 then
+                disp_value = "W/"
+            elseif value == 7 and params:get("takt_crow") == 2 then
+                disp_value = "CROW"
+            elseif value == 8 and params:get("takt_crow") == 3 then
+                disp_value = "CRW12"
+            elseif value == 9 and params:get("takt_crow") == 3 then
+                disp_value = "CRW34"
+            elseif value == 10 and params:get("takt_crow") == 4 then
+                disp_value = "JFCW"
+            elseif value > 10 and value <= #midi.vports then
+                -- Support for additional MIDI devices (e.g., nbout virtual device)
+                if midi.vports[value] and midi.vports[value].name then
+                    local device_name = midi.vports[value].name
+                    -- Show abbreviated device name (e.g., "nb" -> "NB", or first 4 chars)
+                    disp_value = device_name == "nb" and "NB" or string.sub(device_name, 1, 4):upper()
+                else
+                    disp_value = value
+                end
             else
-                disp_value = disp_value 
+                disp_value = disp_value
             end
-            value = disp_value 
+            value = disp_value
             --print ("dev", value)
           elseif name == "RN" or name == "RD" then
             value = value * 10

@@ -956,9 +956,11 @@ local midi_step_params = {
   [5] = function(tr, s, d) -- channel
       data[data.pattern][tr].params[s].channel = util.clamp(data[data.pattern][tr].params[s].channel + d, 1, 16)
   end,
-  --@chailight increase the options for the device to enable selecting JF, WSyn and crow 
+  --@chailight increase the options for the device to enable selecting JF, WSyn and crow
   [6] = function(tr, s, d) -- device
-      data[data.pattern][tr].params[s].device = util.clamp(data[data.pattern][tr].params[s].device + d, 1, 10)
+      -- Support all available MIDI devices (including virtual devices like nbout)
+      local max_device = math.max(10, #midi.vports)
+      data[data.pattern][tr].params[s].device = util.clamp(data[data.pattern][tr].params[s].device + d, 1, max_device)
       if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_1_val = params:get("wsyn_ramp") 
         data[data.pattern][tr].params[s].cc_2_val = params:get("wsyn_fm_index") 
@@ -1206,9 +1208,12 @@ local params_fx = {
   
 function init()
 
-  for i = 1, 4 do
+  -- Connect to all available MIDI devices (including virtual devices like nbout)
+  for i = 1, #midi.vports do
       midi_out_devices[i] = midi.connect(i)
-      midi_out_devices[i].event = midi_event
+      if midi_out_devices[i] then
+          midi_out_devices[i].event = midi_event
+      end
   end
 
   for i = 1, #music.SCALES do
