@@ -778,7 +778,7 @@ end
 
 
 function Timber.init()
-  
+
   params:add_trigger('load_f','+ Load Folder')
   params:set_action('load_f', function() Timber.FileSelect.enter(_path.audio, function(file)
   if file ~= "cancel" then Timber.load_folder(file, add) end end) end)
@@ -787,12 +787,14 @@ function Timber.init()
   Timber.options.PLAY_MODE_STREAMING_DEFAULT = 3
   params:add_separator()
   Timber.add_params()
-  
+
+  -- Add each sample's params in its own group for better organization
   for i = 1, NUM_SAMPLES do
-    params:add_separator()
-    Timber.add_sample_params(i) 
+    -- Each sample has 50 params (including separators)
+    params:add_group("Voice " .. i, 50)
+    Timber.add_sample_params(i)
   end
-  
+
 end
 
 function Timber.get_meta(id)
