@@ -16,17 +16,15 @@ local takt_utils = include('lib/_utils')
 local ui = include('lib/ui')
 local linn = include('lib/linn')
 local lfo = include("lib/hnds")
-local beatclock = require 'beatclock'
 local music = require 'musicutil'
 local fileselect = require('fileselect')
 local textentry = require('textentry')
 --
-local midi_clock
 local midi_out_devices = {}
 local REC_CC = 38
 --
 -- supporting variables for @chailight mods
-is_running = flase
+is_running = false
 seq_stage = 0
 step = 0
 pattern_name = 'new'
@@ -237,18 +235,10 @@ end
 
 local function load_project(pth)
 
-  if original_clock then --@chailight switch behaviour based on clock selection
-      sequencer_metro:stop() 
-      midi_clock:stop()
-      engine.noteOffAll()
-      redraw_metro:stop()
-      comp_shut(sequencer_metro.is_running)
-  else
-      clock.transport.stop()
-      engine.noteOffAll()
-      redraw_metro:stop()
-      comp_shut(is_running)
-  end
+  clock.transport.stop()
+  engine.noteOffAll()
+  redraw_metro:stop()
+  comp_shut(is_running)
 
   --set_view('steps_engine')
   if string.find(pth, '.tkt') ~= nil then
@@ -287,18 +277,10 @@ local function load_project(pth)
 end
 
 local function save_project(txt)
-  if original_clock then --@chailight switch behaviour based on clock selection
-      sequencer_metro:stop() 
-      midi_clock:stop()
-      redraw_metro:stop()
-      engine.noteOffAll()
-      comp_shut(sequencer_metro.is_running)
-  else
-      clock.transport.stop()
-      redraw_metro:stop()
-      engine.noteOffAll()
-      comp_shut(is_running)
-  end
+  clock.transport.stop()
+  redraw_metro:stop()
+  engine.noteOffAll()
+  comp_shut(is_running)
 
   if txt then
     tab.save({ txt, data }, norns.state.data .. txt ..".tkt")
@@ -486,17 +468,11 @@ local function set_div(tr, div)
 end
 
 local function set_bpm(n)
-    if original_clock then --@chailight switch behaviour based on clock selection
+    if params:string("clock_source") == "internal" then
         data[data.pattern].bpm = n
-        sequencer_metro.time = 60 / (data[data.pattern].bpm * 2)  / 16 --[[ppqn]] / 4 
-        midi_clock:bpm_change( util.round(data[data.pattern].bpm / midi_dividers[util.clamp(data[data.pattern].sync_div, 1, 7)]))
+        params:set("clock_tempo",n)
     else
-        if params:string("clock_source") == "internal" then
-            data[data.pattern].bpm = n
-            params:set("clock_tempo",n)
-        else
-            data[data.pattern].bpm = math.floor(clock.get_tempo()) 
-        end
+        data[data.pattern].bpm = math.floor(clock.get_tempo())
     end
 end
 
@@ -812,7 +788,6 @@ local function midi_event(d)
       else
           midi_out_devices[step_param.device]:note_on( msg.note, msg.vel, step_param.channel )
       end
-      --if sequencer_metro.is_running and PATTERN_REC then 
       if is_running and PATTERN_REC then --@chailight unifying on a single is_running flag
         place_note(tr, pos, msg.note)
       end
@@ -846,9 +821,10 @@ local track_params = {
       if div ~= data[data.pattern].track.div[tr] then sync_tracks(tr) end
       
   end,
-  [-2] = function(tr, s, d) -- midi out bpm scale -- @chailight - what is the equiv in global clock world?
+  [-2] = function(tr, s, d) -- midi out bpm scale
     data[data.pattern].sync_div = util.clamp(data[data.pattern].sync_div + d, 0, 7)
-    if data[data.pattern].sync_div == 0 then midi_clock.send = false else midi_clock.send = true end
+    -- TODO: Implement MIDI clock send for global clock system
+    -- if data[data.pattern].sync_div == 0 then midi_clock.send = false else midi_clock.send = true end
 end,
 [-1] = function(tr, s, d) -- sidechain
      data[data.pattern][tr].params[tostring(tr)].sidechain_send = util.clamp(data[data.pattern][tr].params[tostring(tr)].sidechain_send + d, -99, 0 )
@@ -1075,42 +1051,22 @@ local trig_params = {
 }
 
 local controls = {
-  [1] = function(z) -- start / stop, 
+  [1] = function(z) -- start / stop
       if z == 1 then
-        if original_clock then --@chailight switch behaviour based on clock selection
-            if sequencer_metro.is_running then 
-              sequencer_metro:stop() 
-              midi_clock:stop()
-              notes_off_midi()
-              is_running = sequencer_metro.is_running --@chailight maintain a single is_running_status
-            else 
-              sequencer_metro:start() 
-              is_running = sequencer_metro.is_running --@chailight maintain a single is_running_status
-              midi_clock:start()
-            end
-            if MOD then
-              engine.noteOffAll() 
-              reset_positions()
-              kill_all_midi()
-            end
-            comp_shut(sequencer_metro.is_running)
+        if is_running then
+          clock.transport.stop()
+          notes_off_midi()
         else
-            if is_running then 
-              clock.transport.stop()
-              notes_off_midi()
-            else 
-              clock.transport.start()
-            end
-            if MOD then
-              engine.noteOffAll() 
-              reset_positions()
-              kill_all_midi()
-            end
-            comp_shut(is_running)
+          clock.transport.start()
         end
+        if MOD then
+          engine.noteOffAll()
+          reset_positions()
+          kill_all_midi()
+        end
+        comp_shut(is_running)
       end
     end,
-  --[3] = function(z)  if view.notes_input and z == 1 and sequencer_metro.is_running then PATTERN_REC = not PATTERN_REC end end,
   [3] = function(z)  if view.notes_input and z == 1 and is_running then PATTERN_REC = not PATTERN_REC end end,
   [5] = function(z)  if z == 1 then if not view.notes_input then set_view('steps_engine') PATTERN_REC = false end tr_change(1)  end end,
   [6] = function(z)  if z == 1 then  if not view.notes_input then set_view('steps_midi') PATTERN_REC = false end tr_change(8)  end end,
@@ -1246,24 +1202,14 @@ function init()
     sampler.init()
     ui.init()
 
-    if original_clock then --@chailight switch behaviour based on clock selection
-        sequencer_metro = metro.init()
-        sequencer_metro.time = 60 / (data[data.pattern].bpm * 2) / 16 --[[ppqn]] / 4 
-        sequencer_metro.event = function(stage) seqrun(stage) if stage % m_div(data.metaseq.div) == 0 then metaseq(stage) end end
-
-        redraw_metro = metro.init(function(stage) redraw(stage) g:redraw() blink = (blink + 1) % 17 end, 1/30)
-        redraw_metro:start()
-        midi_clock = beatclock:new()
-        midi_clock.on_step = function() end
-        midi_clock:bpm_change( util.round(data[data.pattern].bpm / midi_dividers[util.clamp(data[data.pattern].sync_div, 1, 7)]))
-        midi_clock.send = false
-    else
-        if params:string("clock_source") == "internal" then
-            params:set("clock_tempo", data[data.pattern].bpm)
-        end
-        redraw_metro = metro.init(function(stage) redraw(stage) g:redraw() blink = (blink + 1) % 17 end, 1/30)
-        redraw_metro:start()
+    -- Set up clock source
+    if params:string("clock_source") == "internal" then
+        params:set("clock_tempo", data[data.pattern].bpm)
     end
+
+    -- Start redraw metro
+    redraw_metro = metro.init(function(stage) redraw(stage) g:redraw() blink = (blink + 1) % 17 end, 1/30)
+    redraw_metro:start()
 end
 
 function clocked_seq()
@@ -1436,7 +1382,6 @@ function redraw(stage)
 
   local tr = data.selected[1]
   local pos = data[data.pattern].track.pos[tr]
-  --local params_data = get_params(tr, sequencer_metro.is_running and pos or false, true)
   local params_data = get_params(tr, is_running and pos or false, true)
   
   
@@ -1505,7 +1450,6 @@ function g.key(x, y, z)
       else
           midi_out_devices[step_parame.device]:note_on( msg.note, msg.vel, step_param.channel )
       end
-      --if sequencer_metro.is_running and PATTERN_REC then 
       if is_running and PATTERN_REC then 
         place_note(tr, pos, note )
       end
@@ -1684,7 +1628,6 @@ function g.redraw()
             local id = to_id(x,y)
             --print(id)
             local level =
-            --id == ptn_change_pending  and sequencer_metro.is_running and  util.clamp(blink, 5, 14)
             id == ptn_change_pending  and is_running and  util.clamp(blink, 5, 14)
             or (data.metaseq.from and data.metaseq.to) and id == data.pattern and  util.clamp(blink, 5, 14)
             or (id >= (data.metaseq.from and data.metaseq.from or data.pattern) and id <= (data.metaseq.to and data.metaseq.to or data.pattern)) and 9 
@@ -1698,7 +1641,6 @@ function g.redraw()
       end
     end
     -- playhead
-    --if (view.notes_input and  ALT ) or (not view.patterns and not view.notes_input) and sequencer_metro.is_running and not SHIFT then
     if (view.notes_input and  ALT ) or (not view.patterns and not view.notes_input) and is_running and not SHIFT then
       local yy = view.steps_midi and y + 7 or y 
       local pos = math.ceil(data[data.pattern].track.pos[yy] / 16)
@@ -1706,8 +1648,7 @@ function g.redraw()
       if not data[data.pattern].track.mute[yy] then g:led(pos, y, level) end
     end
   end
-  
-  --g:led(1, 8,  sequencer_metro.is_running and 15 or 6 )
+
   g:led(1, 8,  is_running and 15 or 6 )
   
   g:led(3, 8,  (view.notes_input and PATTERN_REC) and glow or view.notes_input and 6 or 0)
