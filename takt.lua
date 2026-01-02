@@ -68,6 +68,11 @@ step = 0
 pattern_name = 'new'
 pluckylogger_update = false
 
+-- Cached device type checks (updated when params change, not every seqrun call)
+local takt_jf_enabled = false
+local takt_wsyn_enabled = false
+local takt_crow_mode = 1  -- 1=off, 2=full voice, 3=2 voices, 4=jf+crow
+
 local lfo_targets = {
     "none",
     "CC1 8",
@@ -659,11 +664,17 @@ local function seqrun(counter)
       or (div == 6 and counter % dividers[div] >= 0.5) then
 
         advance_step(tr, counter)
-        
+
         local mute = data[data.pattern].track.mute[tr]
         local pos = data[data.pattern].track.pos[tr]
         local trig = data[data.pattern][tr][pos]
-        
+
+        -- Early skip: if track is muted and no trigger, skip expensive processing
+        -- But still need to handle choke note-offs for MIDI tracks
+        if mute and trig == 0 and (tr < 8 or not choke[tr][6]) then
+          goto continue
+        end
+
         if tr > 7 and choke[tr][6] then
             if pos > choke[tr][5] + choke[tr][6] then
               midi_out_devices[choke[tr][1]]:note_off(choke[tr][2], choke[tr][3], choke[tr][4])
@@ -684,15 +695,17 @@ local function seqrun(counter)
 
           set_locks(data[data.pattern][tr].params[tostring(tr)])
 
+          -- Get params once with lock info first
           local step_param = get_params(tr, pos, true)
           if ENABLE_PROFILING then
             profile_stats.get_params_calls = profile_stats.get_params_calls + 1
           end
-          
+
           data[data.pattern].track.div[tr] = step_param.div ~= data[data.pattern].track.div[tr] and step_param.div or data[data.pattern].track.div[tr]
 
           if rules[step_param.rule][2](tr, pos) then
 
+            -- Only re-fetch params if not locked (optimization: avoid double get_params call)
             if step_param.lock ~= 1 then
               step_param = get_params(tr)
               if ENABLE_PROFILING then
@@ -716,7 +729,7 @@ local function seqrun(counter)
               end
               
             else
-              if params:get("takt_jf")==2 and step_param.device == 5 then  -- add support for takt_jf_crow
+              if takt_jf_enabled and step_param.device == 5 then  -- add support for takt_jf_crow
                   crow.ii.jf.play_note((step_param.note-60)/12,(step_param.velocity/127) * 10)
                   --print("jf", step_param.note)
                   if step_param.chord then
@@ -727,7 +740,7 @@ local function seqrun(counter)
                         end
                       end
                   end
-              elseif params:get("takt_wsyn")==2 and step_param.device == 6 then 
+              elseif takt_wsyn_enabled and step_param.device == 6 then
                   crow.ii.wsyn.lpg_time(util.linlin(1,256,5,-5,step_param.length))
                   -- update the CC values if they've been changed directly by pluckylogger 
                   if pluckylogger_update then
@@ -764,7 +777,7 @@ local function seqrun(counter)
                         end
                       end
                   end
-              elseif params:get("takt_crow")==2 and step_param.device == 7 then 
+              elseif takt_crow_mode == 2 and step_param.device == 7 then
                   crow.output[1].volts = (step_param.note-0)/12 + crow_out_1_offset_v
                   crow.output[2].action = string.format("pulse(%.3f,10)", (step_param.length* 60/data[data.pattern].bpm/10))
                   crow.output[2]() -- this will be a trigger? what if we want a gate = note length?
@@ -811,6 +824,7 @@ local function seqrun(counter)
           end
        end
     end
+    ::continue::  -- Label for early skip optimization
   end
 
   if ENABLE_PROFILING then
@@ -1251,16 +1265,19 @@ function init()
     params:add_option("takt_jf","jf output",{"no","yes"},1)
     params:add_option("takt_wsyn","wsyn output",{"no","yes"},1)
     params:set_action("takt_jf",function(x)
+        takt_jf_enabled = (x == 2)  -- Cache the value
         if x==2 then
           crow.ii.jf.mode(1)
         end
     end)
     params:set_action("takt_wsyn",function(x)
+        takt_wsyn_enabled = (x == 2)  -- Cache the value
         if x==2 then
           crow.ii.wsyn.play_voice(0,0,0)
         end
     end)
     params:set_action("takt_crow",function(x) -- need to ensure crow clock out is turned off
+        takt_crow_mode = x  -- Cache the value
         if x==2 then
           print("init crow full voice")
           crow.output[1].volts = 0.0
