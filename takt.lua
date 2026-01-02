@@ -23,6 +23,44 @@ local textentry = require('textentry')
 local midi_out_devices = {}
 local REC_CC = 38
 --
+-- Performance profiling
+local ENABLE_PROFILING = false -- Set to true to enable profiling
+local profile_stats = {
+  seqrun_calls = 0,
+  seqrun_total_time = 0,
+  seqrun_max_time = 0,
+  tracks_processed = 0,
+  trigs_fired = 0,
+  get_params_calls = 0,
+  chord_generations = 0,
+  midi_outputs = 0,
+  engine_outputs = 0,
+  sample_count = 0,
+}
+
+local function reset_profile_stats()
+  for k, _ in pairs(profile_stats) do
+    profile_stats[k] = 0
+  end
+end
+
+local function print_profile_stats()
+  if profile_stats.seqrun_calls == 0 then return end
+  print("=== seqrun() Performance Profile ===")
+  print(string.format("Calls: %d", profile_stats.seqrun_calls))
+  print(string.format("Total time: %.3f ms", profile_stats.seqrun_total_time * 1000))
+  print(string.format("Avg time: %.3f ms", (profile_stats.seqrun_total_time / profile_stats.seqrun_calls) * 1000))
+  print(string.format("Max time: %.3f ms", profile_stats.seqrun_max_time * 1000))
+  print(string.format("Tracks processed: %d", profile_stats.tracks_processed))
+  print(string.format("Triggers fired: %d", profile_stats.trigs_fired))
+  print(string.format("get_params() calls: %d", profile_stats.get_params_calls))
+  print(string.format("Chord generations: %d", profile_stats.chord_generations))
+  print(string.format("MIDI outputs: %d", profile_stats.midi_outputs))
+  print(string.format("Engine outputs: %d", profile_stats.engine_outputs))
+  print("====================================")
+end
+
+--
 -- supporting variables for @chailight mods
 is_running = false
 seq_stage = 0
@@ -604,7 +642,16 @@ local function advance_step(tr, counter)
 end
 
 local function seqrun(counter)
+  local start_time
+  if ENABLE_PROFILING then
+    start_time = util.time()
+    profile_stats.seqrun_calls = profile_stats.seqrun_calls + 1
+  end
+
   for tr = 1, 14 do
+      if ENABLE_PROFILING then
+        profile_stats.tracks_processed = profile_stats.tracks_processed + 1
+      end
 
       local div = data[data.pattern].track.div[tr]
       
@@ -631,16 +678,27 @@ local function seqrun(counter)
         end
         
         if trig == 1 and not mute then
-          
+          if ENABLE_PROFILING then
+            profile_stats.trigs_fired = profile_stats.trigs_fired + 1
+          end
+
           set_locks(data[data.pattern][tr].params[tostring(tr)])
-          
+
           local step_param = get_params(tr, pos, true)
+          if ENABLE_PROFILING then
+            profile_stats.get_params_calls = profile_stats.get_params_calls + 1
+          end
           
           data[data.pattern].track.div[tr] = step_param.div ~= data[data.pattern].track.div[tr] and step_param.div or data[data.pattern].track.div[tr]
 
-          if rules[step_param.rule][2](tr, pos) then 
-            
-            step_param = step_param.lock ~= 1 and get_params(tr) or step_param
+          if rules[step_param.rule][2](tr, pos) then
+
+            if step_param.lock ~= 1 then
+              step_param = get_params(tr)
+              if ENABLE_PROFILING then
+                profile_stats.get_params_calls = profile_stats.get_params_calls + 1
+              end
+            end
             
             if tr == data.selected[1] then 
               redraw_params[1] = step_param
@@ -648,11 +706,14 @@ local function seqrun(counter)
             end
             
             if tr < 8 then
-              
+
               set_locks(step_param)
               choke_group(tr, step_param.sample)
               engine.noteOn(tr, music.note_num_to_freq(step_param.note), 1, step_param.sample)
               choke[tr] = step_param.sample
+              if ENABLE_PROFILING then
+                profile_stats.engine_outputs = profile_stats.engine_outputs + 1
+              end
               
             else
               if params:get("takt_jf")==2 and step_param.device == 5 then  -- add support for takt_jf_crow
@@ -724,10 +785,16 @@ local function seqrun(counter)
                   end
 
                   midi_out_devices[step_param.device]:note_on( step_param.note, step_param.velocity, step_param.channel )
+                  if ENABLE_PROFILING then
+                    profile_stats.midi_outputs = profile_stats.midi_outputs + 1
+                  end
                   --print("note", step_param.note)
                   if step_param.chord then
                       if step_param.chord > -1 then
-                        local chord = music.generate_chord(step_param.note,chord_names[step_param.chord]) 
+                        local chord = music.generate_chord(step_param.note,chord_names[step_param.chord])
+                        if ENABLE_PROFILING then
+                          profile_stats.chord_generations = profile_stats.chord_generations + 1
+                        end 
                         --print("root", step_param.note)
                         --print("chord", chord, #chord)
                         --print("chord on", chord, chord_names[step_param.chord])
@@ -745,7 +812,14 @@ local function seqrun(counter)
        end
     end
   end
-  
+
+  if ENABLE_PROFILING then
+    local elapsed = util.time() - start_time
+    profile_stats.seqrun_total_time = profile_stats.seqrun_total_time + elapsed
+    if elapsed > profile_stats.seqrun_max_time then
+      profile_stats.seqrun_max_time = elapsed
+    end
+  end
 end
 
 local function midi_event(d)
@@ -1144,6 +1218,34 @@ function init()
     --    my_scale_root = x 
     --    my_scale = music.generate_scale(x,my_scale_type,4)
     --end)
+    params:add_separator()
+
+    -- Performance profiling controls
+    params:add{type = "option", id = "enable_profiling", name = "Enable Profiling",
+        options = {"no", "yes"}, default = 1,
+        action = function(val)
+          ENABLE_PROFILING = (val == 2)
+          if ENABLE_PROFILING then
+            reset_profile_stats()
+            print("Profiling enabled - stats will be collected")
+          else
+            print("Profiling disabled")
+          end
+        end}
+    params:add{type = "trigger", id = "print_profile", name = "Print Profile Stats",
+        action = function()
+          if profile_stats.seqrun_calls > 0 then
+            print_profile_stats()
+          else
+            print("No profiling data collected yet")
+          end
+        end}
+    params:add{type = "trigger", id = "reset_profile", name = "Reset Profile Stats",
+        action = function()
+          reset_profile_stats()
+          print("Profile stats reset")
+        end}
+
     params:add_separator()
     params:add_option("takt_crow","crow output",{"no","full voice", "2 voices", "jf + crow"},1)
     params:add_option("takt_jf","jf output",{"no","yes"},1)
