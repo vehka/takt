@@ -77,7 +77,7 @@ end
 
 
 function lfo.init()
-  params:add_separator("modulation")
+  params:add_separator("MODULATION")
   for i = 1, number_of_outputs do
     -- modulation destination
     params:add_group("lfo " .. i, 6)

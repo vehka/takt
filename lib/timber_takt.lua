@@ -459,10 +459,12 @@ end
 -- Params
 
 function Timber.add_params()
-  
+
   params:add{type = "trigger", id = "clear_all", name = "Clear All", action = function(value)
     Timber.clear_samples(1, #samples_meta)
   end}
+
+  params:add_separator("SAMPLE LFOs")
   params:add{type = "control", id = "lfo_1_freq", name = "LFO1 Freq", controlspec = specs.LFO_1_FREQ, formatter = Formatters.format_freq, action = function(value)
     engine.lfo1Freq(value)
   end}
@@ -475,9 +477,9 @@ function Timber.add_params()
   params:add{type = "option", id = "lfo_2_wave_shape", name = "LFO2 Shape", options = options.LFO_WAVE_SHAPE, default = 4, action = function(value)
     engine.lfo2WaveShape(value - 1)
   end}
-  
 
-  params:add_separator()
+
+  params:add_separator("DELAY")
   params:add_control("delay_time", "Delay: time", specs.DELAY_TIME, Formatters.secs_as_ms)
   params:set_action("delay_time", engine.delayTime)
   
@@ -486,7 +488,7 @@ function Timber.add_params()
   
   params:add_control("delay_level", "Delay: level", specs.DELAY_LEVEL, Formatters.default)
   params:set_action("delay_level", engine.delayLevel)
-  params:add_separator()
+  params:add_separator("REVERB")
   -- reverb time
   params:add_control("reverb_time", "Reverb: time", specs.REVERB_TIME) 
   params:set_action("reverb_time", function(value) engine.reverbTime(value) end)
@@ -521,7 +523,7 @@ function Timber.add_params()
   params:add_control("reverb_highcut", "Reverb: high cut", specs.REVERB_HIGHCUT)
   params:set_action("reverb_highcut", function(value) engine.reverbHighcut(value) end)
 
-  params:add_separator()
+  params:add_separator("COMPRESSOR")
 
   params:add_control("takt_comp_level", "Comp. level", specs.COMP_LEVEL)
   params:set_action("takt_comp_level", function(value) engine.compLevel(value) end)

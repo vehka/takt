@@ -1217,6 +1217,7 @@ function init()
     
   math.randomseed(os.time())
 
+    -- === PROJECT ===
     params:add_trigger('save_p', "< Save project" )
     --@chailight: modified default save name so pick up existing project name if it exists
     --params:set_action('save_p', function(x) textentry.enter(save_project,  'new') end)
@@ -1225,26 +1226,92 @@ function init()
     params:set_action('load_p', function(x) fileselect.enter(norns.state.data, load_project) end)
     params:add_trigger('new', "+ New" )
     params:set_action('new', function(x) init() end)
-    params:add_separator()
+
+    -- === SCALE ===
+    params:add_separator("SCALE")
     params:add{type = "option", id = "scale_mode", name = "scale mode",
         options = scale_names, default = 5,
         action = function() build_scale() end}
     params:add{type = "number", id = "root_note", name = "root note",
         min = 0, max = 127, default = 60, formatter = function(param) return music.note_num_to_name(param:get(), true) end,
         action = function() build_scale() end}
-    --params:add_option("scale","scale",{"major","minor"},1)
-    --params:set_action("scale",function(x)
-    --   my_scale_type = x 
-    --    my_scale = music.generate_scale(my_scale_root,x,4)
-    --end)
-    --params:add_option("root","root",music.NOTE_NAMES,1)
-    --params:set_action("root",function(x)
-    --    my_scale_root = x 
-    --    my_scale = music.generate_scale(x,my_scale_type,4)
-    --end)
-    params:add_separator()
 
-    -- Performance profiling controls
+    -- === HARDWARE ===
+    params:add_separator("HARDWARE")
+    params:add_option("grid_brightness","grid brightness",{"varibright", "4-step (2011)"},1)
+    params:set_action("grid_brightness", function(x)
+        grid_brightness_mode = x
+        if x == 2 then
+          lm:map(g, '2011')
+          print("Grid: 4-step brightness mode enabled")
+        else
+          lm:unmap(g)
+          print("Grid: varibright mode enabled")
+        end
+        grid_dirty = true
+    end)
+
+    -- === OUTPUTS ===
+    params:add_separator("OUTPUTS")
+    params:add_option("takt_crow","crow output",{"no","full voice", "2 voices", "jf + crow"},1)
+    params:add_option("takt_jf","jf output",{"no","yes"},1)
+    params:add_option("takt_wsyn","wsyn output",{"no","yes"},1)
+    params:add_control("takt_midi_input_track","midi input track",controlspec.new(0, 14, 'lin', 1, 0, ""))
+    params:set_action("takt_jf",function(x)
+        takt_jf_enabled = (x == 2)  -- Cache the value
+        if x==2 then
+          crow.ii.jf.mode(1)
+        end
+    end)
+    params:set_action("takt_wsyn",function(x)
+        takt_wsyn_enabled = (x == 2)  -- Cache the value
+        if x==2 then
+          crow.ii.wsyn.play_voice(0,0,0)
+        end
+    end)
+    params:set_action("takt_crow",function(x) -- need to ensure crow clock out is turned off
+        takt_crow_mode = x  -- Cache the value
+        if x==2 then
+          print("init crow full voice")
+          crow.output[1].volts = 0.0
+          crow.output[2].volts = 0.0
+          crow.output[3].volts = 0.0
+          crow.output[4].volts = 0.0
+        end
+    end)
+    wsyn_add_params()
+    params:bang()
+    params:set("wsyn_init",1)
+    crow_add_params()
+
+    -- === MODULATION ===
+    for i = 1, 4 do
+        lfo[i].lfo_targets = lfo_targets
+    end
+    lfo.init()
+
+    -- === MIXER ===
+    params:add_separator("MIXER")
+    main_screen_control_params()
+
+    -- === SAMPLES ===
+    params:add_separator("SAMPLES")
+      
+    for i = 1, 14 do
+      hold[i] = 0
+      holdmax[i] = 0
+      first[i] = 0
+      second[i] = 0
+    end
+    hold['p'] = 0
+    
+    redraw_params[1] = data[1][1].params[tostring(1)]
+    redraw_params[2] = data[1][1].params[tostring(1)]
+
+    timber.init()
+
+    -- === SYSTEM ===
+    params:add_separator("SYSTEM")
     params:add{type = "option", id = "enable_profiling", name = "Enable Profiling",
         options = {"no", "yes"}, default = 1,
         action = function(val)
@@ -1269,77 +1336,6 @@ function init()
           reset_profile_stats()
           print("Profile stats reset")
         end}
-
-    params:add_separator()
-    params:add_option("grid_brightness","grid brightness",{"varibright", "4-step (2011)"},1)
-    params:set_action("grid_brightness", function(x)
-        grid_brightness_mode = x
-        if x == 2 then
-          lm:map(g, '2011')
-          print("Grid: 4-step brightness mode enabled")
-        else
-          lm:unmap(g)
-          print("Grid: varibright mode enabled")
-        end
-        grid_dirty = true
-    end)
-    params:add_separator()
-    params:add_option("takt_crow","crow output",{"no","full voice", "2 voices", "jf + crow"},1)
-    params:add_option("takt_jf","jf output",{"no","yes"},1)
-    params:add_option("takt_wsyn","wsyn output",{"no","yes"},1)
-    params:set_action("takt_jf",function(x)
-        takt_jf_enabled = (x == 2)  -- Cache the value
-        if x==2 then
-          crow.ii.jf.mode(1)
-        end
-    end)
-    params:set_action("takt_wsyn",function(x)
-        takt_wsyn_enabled = (x == 2)  -- Cache the value
-        if x==2 then
-          crow.ii.wsyn.play_voice(0,0,0)
-        end
-    end)
-    params:set_action("takt_crow",function(x) -- need to ensure crow clock out is turned off
-        takt_crow_mode = x  -- Cache the value
-        if x==2 then
-          print("init crow full voice")
-          crow.output[1].volts = 0.0
-          crow.output[2].volts = 0.0
-          crow.output[3].volts = 0.0
-          crow.output[4].volts = 0.0
-          --crow.output[4].action = "lfo(4,1,sine)"
-          --crow.output[4]()
-        end
-    end)
-    wsyn_add_params()
-    params:bang()
-    params:set("wsyn_init",1)
-    crow_add_params()
-    params:add_control("takt_midi_input_track","midi input track",controlspec.new(0, 14, 'lin', 1, 0, ""))
-    params:add_separator()
-
-
-    for i = 1, 4 do
-        lfo[i].lfo_targets = lfo_targets
-    end
-    lfo.init()
-      
-    params:add_separator()
-    main_screen_control_params()
-    params:add_separator()
-      
-    for i = 1, 14 do
-      hold[i] = 0
-      holdmax[i] = 0
-      first[i] = 0
-      second[i] = 0
-    end
-    hold['p'] = 0
-    
-    redraw_params[1] = data[1][1].params[tostring(1)]
-    redraw_params[2] = data[1][1].params[tostring(1)]
-
-    timber.init()
 
     sampler.init()
     ui.init()
