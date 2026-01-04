@@ -43,13 +43,16 @@
   - Hold K1 + E2: Navigate quick-edit parameters
   - Hold K1 + E3: Adjust quick-edit parameter values
 
-**Quick-Edit Parameters** (K1 + E2):
-- **-6**: Global pattern selector
-- **-5**: Track selector (same as E1, for quick access)
-- **-4**: Global BPM (1-300)
-- **-3**: Track scale divider (1-7)
-- **-2**: MIDI sync divider (0-7)
-- **-1**: Sidechain send level
+**Quick-Edit Parameters** (K1 + E2)
+
+SCREENSHOT
+
+- Global pattern selector
+- Track select
+- Global BPM (30-300)
+- Track scale divider (1-7)
+- MIDI sync divider – not implemented at the moment
+- Sidechain send level
 
 #### K2 (Center Button)
 - **In Patterns view**: Exit patterns, return to last sequencer view
@@ -71,16 +74,12 @@
 - **Range**: Continuous wrap at boundaries
 
 #### E2 (Parameter Navigator)
-- **Without K1**: Navigate through parameter pages
-  - Range depends on current view and track type
-  - Steps view: (sample engine) or (MIDI)
-  - Patterns view: -1 to 18
-  - Sampling view: -1 to 6
-- **With K1**: Navigate quick-edit parameters (-6 to -1)
+- **Without K1**: Navigate through parameters on each page
+- **With K1**: Navigate quick-edit parameters on top row
 
 #### E3 (Parameter Editor)
 - **Adjusts current parameter** based on ui_index
-- **With K3 held**: Coarse adjustment for fine-grained parameters
+- **With K3 held**: Coarse adjustment for fine-grained parameters (bug?)
 - See [Parameter Reference](#parameter-reference) for details
 
 ---
@@ -95,6 +94,8 @@
 - **First press**: Select step for editing
 - **Second press**: Toggle trigger on/off at that step
 - **Long hold (>0.2s)**: Clear all substeps under that main step
+
+SCREENSHOT HERE
 
 #### SHIFT Mode (Grid bottom right corner held)
 
@@ -163,15 +164,16 @@ The main sequencer interface showing one track at a time.
 
 ### Patterns View
 
-Manage and sequence multiple patterns.
+Manage patterns and adjust global effects.
 
-**Screen display**:
-- 4×16 grid showing all 64 pattern slots
-- Current pattern highlighted
-- Metaseq range visualization
-- Pattern names/numbers
+**Screen display** (on norns):
+- **Effects parameters** (NOT pattern grid - that's on the grid controller)
+- Compressor controls (level, mix, threshold, slopes)
+- Reverb controls (time, size, damp, diff)
+- Delay controls (level, time, feedback)
+- Sample LFO controls (freq, shape for LFO1/LFO2)
 
-**Grid display**:
+**Grid display** (on grid controller):
 - **Rows 1-4**: Pattern slots 1-64
   - **Bright (15)**: Active pattern
   - **Glow (5-14)**: Pattern change pending or in metaseq range
@@ -180,11 +182,15 @@ Manage and sequence multiple patterns.
   - **Off (2)**: Empty slots
 - **Row 6**: Metaseq divider selector (columns 1-16)
 
-**Operations**:
+**Grid operations**:
 - **Single press**: Select pattern to switch to
+- **Two presses on different patterns**: Set metaseq from/to range
 - **SHIFT + press**: Delete pattern
 - **MOD + press (×2)**: Copy pattern
-- **E2**: Set metaseq from/to range
+
+**Norns controls**:
+- **E2**: Navigate effect parameters (1-19)
+- **E3**: Adjust selected effect parameter
 
 **Access**: Press Grid X=11
 
@@ -583,9 +589,10 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 
 **Setting up metaseq**:
 1. Enter Patterns view (Grid X=11)
-2. **E2 rotate**: Set "from" pattern (first press)
-3. **E2 rotate**: Set "to" pattern (second press)
+2. **Grid press** on starting pattern (e.g., pattern 1) - first press
+3. **Grid press** on ending pattern (e.g., pattern 4) - second press
 4. **Grid Row 6**: Select metaseq divider (columns 1-16)
+5. Metaseq range is now set (patterns 1→4 in this example)
 
 **How it works**:
 - When track reaches end position, pattern advances
@@ -598,7 +605,9 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 - Divider: 4
 - Result: Plays pattern 1 for 4 cycles, then 2, then 3, then 4, repeats
 
-**Disabling metaseq**: Set from=to (same pattern)
+**Disabling metaseq**:
+- Press any single pattern once to clear metaseq and switch to that pattern
+- Metaseq is automatically disabled when you select a new pattern without setting a range
 
 ### Project Management
 
@@ -784,9 +793,10 @@ SFT = Shift (divider/mute)
 
 **Pattern chain**:
 1. Grid X=11 → Patterns view
-2. Create patterns
-3. E2 → Set metaseq from/to
-4. Grid Row 6 → Set divider
+2. Create patterns by sequencing
+3. Grid press pattern A → Grid press pattern B → Set metaseq from A to B
+4. Grid Row 6 → Set metaseq divider
+5. Patterns automatically cycle A→B
 
 **Sample loading**:
 1. E2 → ui_index 1 (Sample)
