@@ -16,6 +16,7 @@ local takt_utils = include('lib/_utils')
 local ui = include('lib/ui')
 local linn = include('lib/linn')
 local lfo = include("lib/hnds")
+local lm = include('ledmap/lib/ledmap')
 local music = require 'musicutil'
 local fileselect = require('fileselect')
 local textentry = require('textentry')
@@ -72,6 +73,7 @@ pluckylogger_update = false
 local takt_jf_enabled = false
 local takt_wsyn_enabled = false
 local takt_crow_mode = 1  -- 1=off, 2=full voice, 3=2 voices, 4=jf+crow
+local grid_brightness_mode = 1  -- 1=varibright (16 levels), 2=4-step (2011 model)
 
 local lfo_targets = {
     "none",
@@ -1269,6 +1271,19 @@ function init()
         end}
 
     params:add_separator()
+    params:add_option("grid_brightness","grid brightness",{"varibright", "4-step (2011)"},1)
+    params:set_action("grid_brightness", function(x)
+        grid_brightness_mode = x
+        if x == 2 then
+          lm:map(g, '2011')
+          print("Grid: 4-step brightness mode enabled")
+        else
+          lm:unmap(g)
+          print("Grid: varibright mode enabled")
+        end
+        grid_dirty = true
+    end)
+    params:add_separator()
     params:add_option("takt_crow","crow output",{"no","full voice", "2 voices", "jf + crow"},1)
     params:add_option("takt_jf","jf output",{"no","yes"},1)
     params:add_option("takt_wsyn","wsyn output",{"no","yes"},1)
@@ -1337,6 +1352,13 @@ function init()
     -- Start redraw metro
     redraw_metro = metro.init(function(stage) redraw(stage) g:redraw() blink = (blink + 1) % 17 end, 1/30)
     redraw_metro:start()
+end
+
+function cleanup()
+  -- Unmap ledmap to prevent persistence between sessions
+  if grid_brightness_mode == 2 then
+    lm:unmap(g)
+  end
 end
 
 function clocked_seq()
