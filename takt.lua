@@ -905,7 +905,7 @@ local track_params = {
         tr_change(data.selected[1])
   end,
   [-4] = function(tr, s, d) -- global bpm
-      set_bpm(util.clamp(data[data.pattern].bpm + d, 1, 999))
+      set_bpm(util.clamp(data[data.pattern].bpm + d, 1, 300))
   end,
   [-3] = function(tr, s, d) -- track scale
     
