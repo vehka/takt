@@ -186,7 +186,7 @@ Manage patterns and adjust global effects.
 - **Single press**: Select pattern to switch to
 - **Two presses on different patterns**: Set metaseq from/to range
 - **SHIFT + press**: Delete pattern
-- **MOD + press (×2)**: Copy pattern
+- **MOD + source + destination**: Copy pattern
 
 **Norns controls**:
 - **E2**: Navigate effect parameters (1-19)
