@@ -1358,8 +1358,8 @@ function cleanup()
 end
 
 function clocked_seq()
-    if params:string("clock_source") ~= "midi" then
-        clock.sync(4) -- wait until the "1" of a 4/4 count
+    if params:string("clock_source") ~= "midi" and params:string("clock_source") ~= "internal" then
+        clock.sync(4) -- wait until the "1" of a 4/4 count (Link/Crow sync)
     end
     while true do
         for i=1,256 do
@@ -1375,12 +1375,10 @@ end
 
 function clock.transport.start()
   -- print("we begin")
-  if params:string("clock_source") ~= "internal" then
-    reset_positions()
-  end
-  is_running = true 
+  reset_positions()
+  is_running = true
   seq_stage = 0
-  sequencer_clock = clock.run(clocked_seq) 
+  sequencer_clock = clock.run(clocked_seq)
   print("transport: run")
 end
 
