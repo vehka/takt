@@ -43,9 +43,9 @@
   - Hold K1 + E2: Navigate quick-edit parameters
   - Hold K1 + E3: Adjust quick-edit parameter values
 
-**Quick-Edit Parameters** (K1 + E2)
+![](images/takt_controls.png)
 
-SCREENSHOT
+**Quick-Edit Parameters** (K1 + E2)
 
 - Global pattern selector
 - Track select
@@ -95,7 +95,7 @@ SCREENSHOT
 - **Second press**: Toggle trigger on/off at that step
 - **Long hold (>0.2s)**: Clear all substeps under that main step
 
-SCREENSHOT HERE
+![](images/takt_controls.png)
 
 #### SHIFT Mode (Grid bottom right corner held)
 
