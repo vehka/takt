@@ -43,7 +43,7 @@
   - Hold K1 + E2: Navigate quick-edit parameters
   - Hold K1 + E3: Adjust quick-edit parameter values
 
-![](images/takt_controls.png)
+![](images/takt_main.png)
 
 **Quick-Edit Parameters** (K1 + E2)
 
@@ -97,7 +97,7 @@
 
 ### Control row
 
-![](images/takt_main.png)
+![](images/takt_controls.png)
 
 **Button functions**:
 - **1**: Play/Stop sequencer
