@@ -95,7 +95,22 @@
 - **Second press**: Toggle trigger on/off at that step
 - **Long hold (>0.2s)**: Clear all substeps under that main step
 
-![](images/takt_controls.png)
+### Control row
+
+![](images/takt_main.png)
+
+**Button functions**:
+- **1**: Play/Stop sequencer
+  - Bright (15): Running
+  - Medium (6): Stopped
+- **2**: Switch to Engine tracks view (steps_engine)
+- **3**: Switch to MIDI tracks view (steps_midi)
+- **4**: Toggle Notes Input mode
+- **5**: Toggle Sampling mode
+- **6**: Toggle Patterns view
+- **7**: MOD button (copy mode)
+- **8**: ALT button (loop setting)
+- **9**: SHIFT button (divider/mute)
 
 #### SHIFT Mode (Grid bottom right corner held)
 
@@ -125,22 +140,6 @@
 - **First press**: Mark source step (copies 16 substeps)
 - **Second press**: Paste to destination
 - Copies all triggers and parameter locks
-
-### Control Row (Row 8)
-
-**Button functions**:
-- **X=1**: Play/Stop sequencer
-  - Bright (15): Running
-  - Medium (6): Stopped
-- **X=3**: Pattern record indicator (when recording)
-- **X=5**: Switch to Engine tracks view (steps_engine)
-- **X=6**: Switch to MIDI tracks view (steps_midi)
-- **X=8**: Toggle Notes Input mode
-- **X=10**: Toggle Sampling mode
-- **X=11**: Toggle Patterns view
-- **X=13**: MOD button (copy mode)
-- **X=15**: ALT button (loop setting)
-- **X=16**: SHIFT button (divider/mute)
 
 ---
 
