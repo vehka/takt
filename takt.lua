@@ -640,10 +640,11 @@ local function notes_off_midi()
   for i = 8, 14 do
       if choke[i][6] then
         midi_out_devices[choke[i][1]]:note_off(choke[i][2], choke[i][3], choke[i][4])
-        if choke[i][8] then
-            for j = 2, #choke[i][8] do
-                --print("chord off", i, choke[i][8][j])
-                midi_out_devices[choke[i][1]]:note_off(choke[i][8][j], choke[i][3], choke[i][4])
+        if choke[i][7] and choke[i][7] > -1 then
+            local chord = music.generate_chord(choke[i][2],chord_names[choke[i][7] + 1])
+            for j = 2, #chord do
+                --print("chord off", i, chord[j])
+                midi_out_devices[choke[i][1]]:note_off(chord[j], choke[i][3], choke[i][4])
             end
         end
       end
@@ -714,11 +715,11 @@ local function seqrun(counter)
         if tr > 7 and choke[tr][6] then
             if pos > choke[tr][5] + choke[tr][6] then
               midi_out_devices[choke[tr][1]]:note_off(choke[tr][2], choke[tr][3], choke[tr][4])
-                -- Use cached chord notes from choke array (index 8)
-                if choke[tr][8] then
-                    for i = 2, #choke[tr][8] do
-                        --print("chord off", i, choke[tr][8][i])
-                        midi_out_devices[choke[tr][1]]:note_off(choke[tr][8][i], choke[tr][3], choke[tr][4])
+                if choke[tr][7] and choke[tr][7] > -1 then
+                    local chord = music.generate_chord(choke[tr][2],chord_names[choke[tr][7] + 1])
+                    for i = 2, #chord do
+                        --print("chord off", i, chord[i])
+                        midi_out_devices[choke[tr][1]]:note_off(chord[i], choke[tr][3], choke[tr][4])
                     end
                 end
             end
@@ -834,19 +835,22 @@ local function seqrun(counter)
                     profile_stats.midi_outputs = profile_stats.midi_outputs + 1
                   end
                   --print("note", step_param.note)
-                  -- Use pre-cached chord notes instead of generating inline
-                  if step_param.chord_notes then
-                      if ENABLE_PROFILING then
-                        profile_stats.chord_generations = profile_stats.chord_generations + 1
-                      end
-                      --print("root", step_param.note)
-                      --print("chord", step_param.chord_notes, #step_param.chord_notes)
-                      for i = 2, #step_param.chord_notes do
-                          --print("chord on", i, step_param.chord_notes[i])
-                          midi_out_devices[step_param.device]:note_on( step_param.chord_notes[i], step_param.velocity, step_param.channel )
+                  if step_param.chord then
+                      if step_param.chord > -1 then
+                        local chord = music.generate_chord(step_param.note,chord_names[step_param.chord + 1])
+                        if ENABLE_PROFILING then
+                          profile_stats.chord_generations = profile_stats.chord_generations + 1
+                        end
+                        --print("root", step_param.note)
+                        --print("chord", chord, #chord)
+                        --print("chord on", chord, chord_names[step_param.chord + 1])
+                        for i = 2, #chord do
+                            --print("chord on", i, chord[i])
+                            midi_out_devices[step_param.device]:note_on( chord[i], step_param.velocity, step_param.channel )
+                        end
                       end
                   end
-                  choke[tr] = { step_param.device, step_param.note, step_param.velocity, step_param.channel, pos, step_param.length, step_param.chord, step_param.chord_notes} 
+                  choke[tr] = { step_param.device, step_param.note, step_param.velocity, step_param.channel, pos, step_param.length, step_param.chord} 
               end
             end
           end
