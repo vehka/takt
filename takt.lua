@@ -129,10 +129,30 @@ local function cache_chord_for_step(tr, s)
   local step = data[data.pattern][tr].params[s]
   if step.chord and step.chord > -1 then
     -- Pre-compute the chord notes and store them
-    step.chord_notes = music.generate_chord(step.note, chord_names[step.chord])
+    -- Chord values are 0-25 but chord_names is 1-indexed (Lua arrays start at 1)
+    step.chord_notes = music.generate_chord(step.note, chord_names[step.chord + 1])
   else
     -- No chord or chord disabled
     step.chord_notes = nil
+  end
+end
+
+-- Cache all chords for all patterns (called after loading project)
+local function cache_all_chords()
+  for pattern_id = 1, 64 do
+    if data[pattern_id] then
+      for track = 1, 14 do
+        for step = 1, 256 do
+          local step_data = data[pattern_id][track].params[step]
+          if step_data.chord and step_data.chord > -1 then
+            -- Chord values are 0-25 but chord_names is 1-indexed (Lua arrays start at 1)
+            step_data.chord_notes = music.generate_chord(step_data.note, chord_names[step_data.chord + 1])
+          else
+            step_data.chord_notes = nil
+          end
+        end
+      end
+    end
   end
 end
 
@@ -326,6 +346,8 @@ local function load_project(pth)
   
         if saved[1] then params:read(norns.state.data .. saved[1] .. ".pset") end
         reset_positions()
+        -- Cache all chords after loading project
+        cache_all_chords()
     else
         print("no data")
     end
