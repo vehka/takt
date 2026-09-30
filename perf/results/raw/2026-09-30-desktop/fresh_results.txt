@@ -1,0 +1,24 @@
+=== stress fresh_new_normal (normal) started 2026-09-30 19:15:01, 30s @ 120 bpm ===
+seqrun: 7671 calls, avg 0.105 ms, p99 2.9 ms, p99.9 4.2 ms, max 6.288 ms, over 3.906 ms budget: 16
+tick lateness: avg 0.565 ms, max 1.750 ms
+audio: xruns 0, dsp load avg 26.0%, max 31.3%
+lua memory max 19063 KB
+
+=== stress fresh_new_heavy (heavy) started 2026-09-30 19:16:04, 30s @ 120 bpm ===
+seqrun: 7670 calls, avg 0.302 ms, p99 3.7 ms, p99.9 4.6 ms, max 8.515 ms, over 3.906 ms budget: 48
+tick lateness: avg 0.559 ms, max 1.938 ms
+audio: xruns 0, dsp load avg 9.5%, max 16.1%
+lua memory max 20553 KB
+
+=== stress fresh_base_normal (normal) started 2026-09-30 19:17:06, 30s @ 120 bpm ===
+seqrun: 7426 calls, avg 0.147 ms, p99 2.4 ms, p99.9 4.0 ms, max 8.443 ms, over 3.906 ms budget: 11
+tick lateness: avg 0.561 ms, max 1.833 ms
+audio: xruns 0, dsp load avg 18.4%, max 32.3%
+lua memory max 19740 KB
+
+=== stress fresh_base_heavy (heavy) started 2026-09-30 19:18:09, 30s @ 120 bpm ===
+seqrun: 7425 calls, avg 0.322 ms, p99 4.0 ms, p99.9 5.1 ms, max 7.263 ms, over 3.906 ms budget: 100
+tick lateness: avg 0.557 ms, max 1.885 ms
+audio: xruns 0, dsp load avg 15.7%, max 23.9%
+lua memory max 20505 KB
+
