@@ -103,6 +103,10 @@
 - **1**: Play/Stop sequencer
   - Bright (15): Running
   - Medium (6): Stopped
+  - With the internal clock, play continues from where it stopped. Hold **MOD** (7)
+    while pressing to stop all notes and go back to the start of the pattern.
+  - With Link or crow clock, play waits for the next bar and starts from the
+    beginning; with MIDI clock it starts on the MIDI start message.
 - **2**: Switch to Engine tracks view (steps_engine)
 - **3**: Switch to MIDI tracks view (steps_midi)
 - **4**: Toggle Notes Input mode
@@ -643,6 +647,8 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 
 **Access**: PARAMS > HARDWARE
 
+This section only appears when the [ledmap](https://github.com/andr-ew/ledmap) library is installed in `dust/code/ledmap`.
+
 - **Grid brightness**:
   - Varibright: Full 16-level brightness (default)
   - 4-step (2011): Compatibility mode for older grids (4 levels)
@@ -688,21 +694,6 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 - **Cutoff**: Track filter cutoff (0.1 to 20000 Hz)
 
 **Usage**: Quick mix adjustments without editing individual step locks
-
-### System Settings
-
-**Access**: PARAMS > SYSTEM
-
-**Profiling** (advanced users):
-- **Enable Profiling**: Turn on performance monitoring (yes/no)
-- **Print Profile Stats**: Display current stats in console
-- **Reset Profile Stats**: Clear accumulated data
-
-**Stats tracked**:
-- seqrun() execution time (avg/max)
-- Triggers fired
-- Chord generations
-- MIDI/engine outputs
 
 ---
 
@@ -891,7 +882,7 @@ SFT = Shift (divider/mute)
 
 **Grid buttons not responding**:
 - Verify grid is connected
-- Check grid brightness setting (PARAMS > HARDWARE)
+- Check grid brightness setting (PARAMS > HARDWARE, if ledmap is installed)
 - Try unplugging and reconnecting grid
 - Restart norns
 
@@ -908,9 +899,7 @@ SFT = Shift (divider/mute)
 - Try loading smaller file first
 
 **Performance/lag**:
-- Disable profiling if enabled (PARAMS > SYSTEM)
 - Reduce number of active LFOs
-- Lower chord generation usage
 - Consider reducing sample count
 
 ---
