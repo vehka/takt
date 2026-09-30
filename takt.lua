@@ -582,18 +582,23 @@ local function kill_all_midi()
   end
 end
 
+-- send note-off for the note (and chord) still sounding on a MIDI track, once
+local function midi_note_off(tr)
+  local c = choke[tr]
+  if not c[6] then return end
+  midi_out_devices[c[1]]:note_off(c[2], c[3], c[4])
+  local chord = get_chord(c[2], c[7])
+  if chord then
+      for j = 2, #chord do
+          midi_out_devices[c[1]]:note_off(chord[j], c[3], c[4])
+      end
+  end
+  c[6] = nil
+end
+
 local function notes_off_midi()
   for i = 8, 14 do
-      if choke[i][6] then
-        midi_out_devices[choke[i][1]]:note_off(choke[i][2], choke[i][3], choke[i][4])
-        local chord = get_chord(choke[i][2], choke[i][7])
-        if chord then
-            for j = 2, #chord do
-                --print("chord off", i, chord[i]) 
-                midi_out_devices[choke[i][1]]:note_off(chord[j], choke[i][3], choke[i][4])
-            end
-        end
-      end
+      midi_note_off(i)
   end
 end
 
@@ -649,17 +654,9 @@ local function seqrun(counter)
           goto continue
         end
 
-        if tr > 7 and choke[tr][6] then
-            if pos > choke[tr][5] + choke[tr][6] then
-              midi_out_devices[choke[tr][1]]:note_off(choke[tr][2], choke[tr][3], choke[tr][4])
-                local chord = get_chord(choke[tr][2], choke[tr][7])
-                if chord then
-                    for i = 2, #chord do
-                        --print("chord off", i, chord[i]) 
-                        midi_out_devices[choke[tr][1]]:note_off(chord[i], choke[tr][3], choke[tr][4])
-                    end
-                end
-            end
+        -- note length elapsed, or the track wrapped around past the note start
+        if tr > 7 and choke[tr][6] and (pos > choke[tr][5] + choke[tr][6] or pos < choke[tr][5]) then
+            midi_note_off(tr)
         end
         
         if trig == 1 and not mute then
@@ -751,6 +748,7 @@ local function seqrun(counter)
                     midi_out_devices[step_param.device]:program_change(step_param.program_change, step_param.channel)
                   end
 
+                  midi_note_off(tr) -- end the previous note if it is still sounding
                   midi_out_devices[step_param.device]:note_on( step_param.note, step_param.velocity, step_param.channel )
                   --print("note", step_param.note)
                   local chord = get_chord(step_param.note, step_param.chord)
