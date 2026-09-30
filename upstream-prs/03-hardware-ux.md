@@ -29,10 +29,10 @@ behaves exactly as before. `cleanup()` removes the mapping on exit.
 
 The PARAMS menu now has named sections: SCALE, HARDWARE (only with ledmap),
 OUTPUTS, MODULATION, MIXER, SAMPLES, and inside the Timber params SAMPLE LFOs,
-DELAY, REVERB and COMPRESSOR. Separators get explicit `takt_*` ids, because a
-separator named "REVERB" or "COMPRESSOR" would collide with the norns system
-params `reverb` and `compressor`, and norns then drops the separator. Param ids
-are unchanged, so psets are not affected.
+DELAY, REVERB and COMPRESSOR. Separators get explicit `takt_*` ids: a
+separator's id defaults to its name, and "REVERB" and "COMPRESSOR" are already
+the ids of the norns system param groups, so norns warns about the collision
+at every load. Param ids are unchanged, so psets are not affected.
 
 ### BPM limit 300
 
