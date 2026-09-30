@@ -83,6 +83,27 @@ local lfo_targets = {
 
 local chord_names = {"Major", "Minor", "Dominant 7", "Major 7", "Minor 7", "Minor Major 7", "Major 6", "Minor 6", "Major 69", "Minor 69", "Ninth", "Major 9", "Minor 9", "Eleventh", "Major 11", "Minor 11", "Thirteenth", "Major 13", "Minor 13", "Sus4", "Seventh sus4", "Diminished", "Diminished 7", "Half Diminished 7", "Augmented", "Augmented 7"}
 
+-- Chord notes memoized by chord type and root note. music.generate_chord() builds
+-- a new table on every call, so seqrun() looks chords up here instead.
+-- Chord values below 1 (none) or out of range return nil.
+local chord_cache = {}
+
+local function get_chord(note, chord)
+  local name = chord and chord_names[chord]
+  if not name then return nil end
+  local by_note = chord_cache[chord]
+  if not by_note then
+    by_note = {}
+    chord_cache[chord] = by_note
+  end
+  local notes = by_note[note]
+  if not notes then
+    notes = music.generate_chord(note, name)
+    by_note[note] = notes
+  end
+  return notes
+end
+
 local crow_out_1_offset_v = 0
 local crow_out_2_offset_v = 0
 local crow_out_3_offset_v = 0
@@ -568,8 +589,8 @@ local function notes_off_midi()
   for i = 8, 14 do
       if choke[i][6] then
         midi_out_devices[choke[i][1]]:note_off(choke[i][2], choke[i][3], choke[i][4])
-        if choke[i][7] > -1 then
-            local chord = music.generate_chord(choke[i][2],chord_names[choke[i][7]]) 
+        local chord = get_chord(choke[i][2], choke[i][7])
+        if chord then
             for j = 2, #chord do
                 --print("chord off", i, chord[i]) 
                 midi_out_devices[choke[i][1]]:note_off(chord[j], choke[i][3], choke[i][4])
@@ -636,8 +657,8 @@ local function seqrun(counter)
         if tr > 7 and choke[tr][6] then
             if pos > choke[tr][5] + choke[tr][6] then
               midi_out_devices[choke[tr][1]]:note_off(choke[tr][2], choke[tr][3], choke[tr][4])
-                if choke[tr][7] > -1 then
-                    local chord = music.generate_chord(choke[tr][2],chord_names[choke[tr][7]]) 
+                local chord = get_chord(choke[tr][2], choke[tr][7])
+                if chord then
                     for i = 2, #chord do
                         --print("chord off", i, chord[i]) 
                         midi_out_devices[choke[tr][1]]:note_off(chord[i], choke[tr][3], choke[tr][4])
@@ -674,12 +695,10 @@ local function seqrun(counter)
               if takt_jf_enabled and step_param.device == 5 then  -- add support for takt_jf_crow
                   crow.ii.jf.play_note((step_param.note-60)/12,(step_param.velocity/127) * 10)
                   --print("jf", step_param.note)
-                  if step_param.chord then
-                      if step_param.chord > -1 then
-                        local chord = music.generate_chord(step_param.note,chord_names[step_param.chord]) 
-                        for i = 2, #chord do
-                            crow.ii.jf.play_note((chord[i]-60)/12,(step_param.velocity/127) * 10)
-                        end
+                  local chord = get_chord(step_param.note, step_param.chord)
+                  if chord then
+                      for i = 2, #chord do
+                          crow.ii.jf.play_note((chord[i]-60)/12,(step_param.velocity/127) * 10)
                       end
                   end
               elseif takt_wsyn_enabled and step_param.device == 6 then
@@ -711,12 +730,10 @@ local function seqrun(counter)
                   end
                   crow.ii.wsyn.play_note((step_param.note-60)/12,(step_param.velocity/127) * 5)
                   --print("wsyn", step_param.note)
-                  if step_param.chord then
-                      if step_param.chord > -1 then
-                        local chord = music.generate_chord(step_param.note,chord_names[step_param.chord]) 
-                        for i = 2, #chord do
-                            crow.ii.wsyn.play_note((chord[i]-60)/12,(step_param.velocity/127) * 5)
-                        end
+                  local chord = get_chord(step_param.note, step_param.chord)
+                  if chord then
+                      for i = 2, #chord do
+                          crow.ii.wsyn.play_note((chord[i]-60)/12,(step_param.velocity/127) * 5)
                       end
                   end
               elseif takt_crow_mode == 2 and step_param.device == 7 then
@@ -741,17 +758,10 @@ local function seqrun(counter)
 
                   midi_out_devices[step_param.device]:note_on( step_param.note, step_param.velocity, step_param.channel )
                   --print("note", step_param.note)
-                  if step_param.chord then
-                      if step_param.chord > -1 then
-                        local chord = music.generate_chord(step_param.note,chord_names[step_param.chord]) 
-                        --print("root", step_param.note)
-                        --print("chord", chord, #chord)
-                        --print("chord on", chord, chord_names[step_param.chord])
-                        for i = 2, #chord do
-                            --print("chord on", i, chord[i]) 
-                            midi_out_devices[step_param.device]:note_on( chord[i], step_param.velocity, step_param.channel )
-                            --midi_out_devices[step_param.device]:note_on( step_param.note+7, step_param.velocity, step_param.channel )
-                        end
+                  local chord = get_chord(step_param.note, step_param.chord)
+                  if chord then
+                      for i = 2, #chord do
+                          midi_out_devices[step_param.device]:note_on( chord[i], step_param.velocity, step_param.channel )
                       end
                   end
                   choke[tr] = { step_param.device, step_param.note, step_param.velocity, step_param.channel, pos, step_param.length, step_param.chord} 
