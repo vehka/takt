@@ -1,4 +1,4 @@
-# PR 3: 4-step grids, param menu sections, BPM limit, transport start
+# PR 3: 4-step grids, param menu sections, BPM limit, instant start
 
 **Branch:** `vehka:upstream/03-hardware-ux` → `chailight:master`
 (builds on PR 2; new commits: 73764df, 08c4c8f, 0f3a900, 9abadd4)
@@ -7,7 +7,7 @@
 
 ## Title
 
-Optional 4-step grid support, param menu sections, transport start fixes
+Optional 4-step grid support, param menu sections, instant start on internal clock
 
 ## Description
 
@@ -39,17 +39,15 @@ are unchanged, so psets are not affected.
 The pattern BPM went up to 999, but the norns clock tempo param stops at 300.
 The limit now matches.
 
-### Transport start
+### Instant start on the internal clock
 
-- **Internal clock:** play starts at once instead of waiting for the next
-  bar, and always starts from step 1. Before, plain play continued from where
-  it stopped, and MOD + play restarted from the beginning. That pause/continue
-  behaviour is gone. If you'd like to keep it, I can make "always restart"
-  optional or drop that part.
-- **Link and crow clock:** still wait for the next bar, so takt stays in phase
-  with the external source.
-- **MIDI clock:** unchanged; there's no wait, because the MIDI start message
-  marks the downbeat.
+With the internal clock, play now starts at once instead of waiting for the
+next bar. Play still continues from where it stopped, and MOD + play still
+goes back to the start, as before.
+
+Link and crow clock still wait for the next bar, so takt stays in phase with
+the external source. MIDI clock is unchanged: there's no wait, because the
+MIDI start message marks the downbeat.
 
 ### Testing
 
@@ -57,19 +55,21 @@ The limit now matches.
   With ledmap, the grid brightness param appears and switches modes.
   Without it, there is no HARDWARE section.
 - No separator-collision warnings at startup.
+- Internal clock: play starts without waiting for the bar, and play after
+  stop continues from the same position (checked with a test script).
 
 ---
 
 <!-- Notes for us (not part of the PR text)
 - BEFORE OPENING, test by hand and add to Testing:
   - with a real 2011 / 4-step grid (the mapping was only checked in code, not on hardware)
-  - internal clock: press play, it starts at once from step 1; stop/play again restarts from step 1
+  - internal clock: press play, it starts at once; stop/play continues; MOD + play restarts
   - Link (e.g. Ableton) and crow clock: play waits for the bar and stays in phase
   - MIDI clock from external gear: starts on MIDI start
   - the PARAMS menu sections look right on the device
 - Ask the maintainer: optional ledmap dependency OK, or built-in mapping?
   (ledmap has no license file, so it can't be vendored as is.)
-- Behaviour change to point out: internal clock no longer waits for the bar,
-  and it no longer continues from the stop position (upstream: plain play
-  continued, MOD + play restarted, see the key handler around takt.lua:1100 in f5d0cc1).
+- Behaviour change to point out: internal clock no longer waits for the bar.
+  (An earlier version also made play always restart; that was reverted on
+  2026-09-30 to keep upstream's play = continue, MOD + play = restart.)
 -->

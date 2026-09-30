@@ -24,7 +24,8 @@ This adds `USER_MANUAL.md`, a full manual, with two screenshots in `images/`:
 - Configuration (the PARAMS sections), quick reference, tips and troubleshooting
 
 It documents takt as it is after the previous PRs (param menu sections, grid
-brightness, BPM limit, transport start).
+brightness, BPM limit, instant start), including play/continue and MOD + play
+to restart.
 
 The Patterns view, metaseq and pattern copy sections were corrected against
 the code. Corrections are very welcome if anything doesn't match how you meant

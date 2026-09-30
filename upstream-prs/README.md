@@ -34,9 +34,8 @@ git rebase --update-refs --onto upstream/master upstream/01-cleanup upstream/04-
 - **Behaviour changes** to agree on:
   - Chord value 0 now plays no chord, matching the display (it used to play a
     major triad) — #2
-  - The internal clock starts at once instead of at the next bar, and play
-    always starts from step 1. This removes pause/continue: plain play used
-    to continue, and MOD + play restarted — #3
+  - The internal clock starts at once instead of at the next bar (play still
+    continues after stop; MOD + play restarts, as before) — #3
   - BPM is capped at 300 — #3
 - **The 4-step grid support** depends on the optional
   [ledmap](https://github.com/andr-ew/ledmap) library. Is an optional
