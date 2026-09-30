@@ -25,6 +25,50 @@ local textentry = require('textentry')
 local midi_out_devices = {}
 local REC_CC = 38
 --
+-- Performance profiling (enable in PARAMS > SYSTEM)
+local ENABLE_PROFILING = false
+local profile = {}
+
+local function reset_profile_stats()
+  profile = {
+    calls = 0, total = 0, max = 0, over_budget = 0,
+    hist = {},  -- seqrun() time histogram, 0.1 ms buckets
+    late_n = 0, late_total = 0, late_max = 0,
+    tracks = 0, trigs = 0, midi_out = 0, engine_out = 0,
+  }
+end
+reset_profile_stats()
+
+local function profile_percentile(p)
+  local target, seen = profile.calls * p, 0
+  for b = 0, 1000 do
+    seen = seen + (profile.hist[b] or 0)
+    if seen >= target then return b / 10 end
+  end
+  return 100
+end
+
+local function print_profile_stats()
+  if profile.calls == 0 then print("No profiling data collected yet") return end
+  local budget = clock.get_beat_sec() / 128 * 1000
+  local lines = {
+    "=== takt profile ===",
+    string.format("tempo %.1f bpm, tick budget %.3f ms", clock.get_tempo(), budget),
+    string.format("seqrun: %d calls, avg %.3f ms, p99 %.1f ms, max %.3f ms, over budget %d",
+      profile.calls, profile.total / profile.calls * 1000, profile_percentile(0.99), profile.max * 1000, profile.over_budget),
+    string.format("clock lateness: avg %.3f ms, max %.3f ms",
+      profile.late_n > 0 and profile.late_total / profile.late_n * 1000 or 0, profile.late_max * 1000),
+    string.format("tracks processed %d, trigs %d, midi out %d, engine out %d",
+      profile.tracks, profile.trigs, profile.midi_out, profile.engine_out),
+  }
+  local f = io.open(norns.state.data .. "profile.txt", "a")
+  for _, l in ipairs(lines) do
+    print(l)
+    if f then f:write(l, "\n") end
+  end
+  if f then f:write("\n") f:close() end
+end
+--
 -- supporting variables for @chailight mods
 is_running = false
 seq_stage = 0
@@ -638,7 +682,9 @@ local function advance_step(tr, counter)
 end
 
 local function seqrun(counter)
+  local start_time = ENABLE_PROFILING and util.time()
   for tr = 1, 14 do
+      if ENABLE_PROFILING then profile.tracks = profile.tracks + 1 end
 
       local div = data[data.pattern].track.div[tr]
       
@@ -663,6 +709,7 @@ local function seqrun(counter)
         end
         
         if trig == 1 and not mute then
+          if ENABLE_PROFILING then profile.trigs = profile.trigs + 1 end
           
           set_locks(data[data.pattern][tr].params[tostring(tr)])
           
@@ -684,6 +731,7 @@ local function seqrun(counter)
               set_locks(step_param)
               choke_group(tr, step_param.sample)
               engine.noteOn(tr, music.note_num_to_freq(step_param.note), 1, step_param.sample)
+              if ENABLE_PROFILING then profile.engine_out = profile.engine_out + 1 end
               choke[tr] = step_param.sample
               
             else
@@ -753,6 +801,7 @@ local function seqrun(counter)
 
                   midi_note_off(tr) -- end the previous note if it is still sounding
                   midi_out_devices[step_param.device]:note_on( step_param.note, step_param.velocity, step_param.channel )
+                  if ENABLE_PROFILING then profile.midi_out = profile.midi_out + 1 end
                   --print("note", step_param.note)
                   local chord = get_chord(step_param.note, step_param.chord)
                   if chord then
@@ -768,7 +817,16 @@ local function seqrun(counter)
     end
     ::continue::  -- Label for early skip optimization
   end
-  
+
+  if ENABLE_PROFILING then
+    local elapsed = util.time() - start_time
+    profile.calls = profile.calls + 1
+    profile.total = profile.total + elapsed
+    if elapsed > profile.max then profile.max = elapsed end
+    if elapsed > clock.get_beat_sec() / 128 then profile.over_budget = profile.over_budget + 1 end
+    local b = math.min(1000, math.floor(elapsed * 10000))
+    profile.hist[b] = (profile.hist[b] or 0) + 1
+  end
 end
 
 local function midi_event(d)
@@ -1237,6 +1295,20 @@ function init()
 
     timber.init()
 
+    -- === SYSTEM ===
+    params:add_separator("takt_system", "SYSTEM")
+    params:add{type = "option", id = "enable_profiling", name = "Enable Profiling",
+        options = {"no", "yes"}, default = 1,
+        action = function(val)
+          ENABLE_PROFILING = (val == 2)
+          reset_profile_stats()
+          print(ENABLE_PROFILING and "Profiling enabled" or "Profiling disabled")
+        end}
+    params:add{type = "trigger", id = "print_profile", name = "Print Profile Stats",
+        action = function() print_profile_stats() end}
+    params:add{type = "trigger", id = "reset_profile", name = "Reset Profile Stats",
+        action = function() reset_profile_stats() print("Profile stats reset") end}
+
     sampler.init()
     ui.init()
 
@@ -1264,6 +1336,14 @@ function clocked_seq()
     while true do
         for i=1,256 do
           clock.sync(1/128)
+          if ENABLE_PROFILING then
+            -- how far past the 1/128 grid this tick woke up
+            local beats = clock.get_beats()
+            local late = (beats - math.floor(beats * 128 + 0.5) / 128) * clock.get_beat_sec()
+            profile.late_n = profile.late_n + 1
+            profile.late_total = profile.late_total + late
+            if late > profile.late_max then profile.late_max = late end
+          end
           seqrun(math.floor(i))
           if i % m_div(data.metaseq.div) == 0 then 
               metaseq() 
