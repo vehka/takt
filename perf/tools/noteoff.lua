@@ -12,6 +12,8 @@ local data = upv(clocked_seq, "data")
 local notes_off = upv(clock.transport.stop, "notes_off_midi") -- may be nil
 local P, TR = data.pattern, 8
 local vp = midi.vports[1]
+-- vport methods are fields on the vport table: keep the originals to put back
+local orig_on, orig_off = vp.note_on, vp.note_off
 local function case(label, trigs, length, chord)
   for tr = 1, 14 do
     data[P].track.mute[tr] = tr ~= TR
@@ -30,7 +32,7 @@ local function case(label, trigs, length, chord)
   for c = 1, 1024 do seqrun(c) end -- two passes through the pattern
   local hanging = 0
   for _ in pairs(sounding) do hanging = hanging + 1 end
-  vp.note_on, vp.note_off = nil, nil
+  vp.note_on, vp.note_off = orig_on, orig_off
   print(string.format("noteoff2 %-34s on %4d off %4d, double/unmatched %d, still sounding %d (max 1 chord ok)", label, ons, offs, bad, hanging))
 end
 case("single note, length 3", { 1 }, 3, -1)
