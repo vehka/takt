@@ -22,13 +22,17 @@ always took the global-clock path. This PR removes those branches,
 `sequencer_metro`, `midi_clock` and the `beatclock` require, and keeps only the
 global-clock code. Net result: about 60 fewer lines in `takt.lua`.
 
-It also fixes two small bugs:
+It also fixes three small bugs:
 
 - `is_running = flase` → `false` (it only worked because `flase` is nil)
 - Changing **midi out bpm scale** (`sync_div`) crashed: its handler set
   `midi_clock.send`, but `midi_clock` is only created in the dead metro path,
   so it was nil. The setting is still stored, with a TODO. MIDI clock out for
   the global clock system would be a separate change.
+- In notes input mode, a grid key on a MIDI track raised an error
+  (`step_parame`, an undefined variable) after the note had been sent, so
+  notes played on the grid were never recorded on MIDI tracks. The broken
+  duplicate `note_on` is removed; `linn.grid_key()` already sends the note.
 
 ### Timber voice params in groups
 
@@ -49,8 +53,9 @@ makes the menu usable. Param ids don't change, so existing psets are not affecte
 - BEFORE OPENING, test by hand on a real norns and add to Testing:
   start/stop from K2 and the grid; tempo change from the UI; change
   "midi out bpm scale" (crashes upstream, should not crash here); load an
-  existing project/pset; open a Voice group in PARAMS.
-- Commits: b08a156 (param groups), 080826f (dead code)
+  existing project/pset; open a Voice group in PARAMS; record notes from the
+  grid keyboard on a MIDI track (checked on desktop norns with a test script only).
+- Commits: b08a156 (param groups), 080826f (dead code), 8a3f7e5 (grid keyboard fix)
 - Group ids are "Voice N", with spaces. Norns accepts this (the name is optional
   and defaults to the id). If the maintainer prefers ids without spaces, use
   add_group("timber_voice_"..i, "Voice "..i, 50); that needs norns 2.7+.
