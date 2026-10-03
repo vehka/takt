@@ -822,13 +822,34 @@ function ui.nb_overlay(slot, name, value, set, note)
   end
 end
 
+-- window over the MIDI screen that asks whether the CC slots should change to
+-- the defaults of the model an nb voice was changed to
+function ui.nb_confirm(variant)
+  screen.level(0)
+  screen.rect(8, 12, 112, 40)
+  screen.fill()
+  screen.level(15)
+  screen.rect(8.5, 12.5, 111, 39)
+  screen.stroke()
+  screen.move(13, 22)
+  screen.text("model: " .. variant)
+  screen.level(4)
+  screen.move(13, 34)
+  screen.text("new params? resets locks")
+  screen.level(15)
+  screen.move(13, 45)
+  screen.text("K2 yes")
+  screen.move(115, 45)
+  screen.text_right("K3 keep old")
+end
+
 --@chailight need to pass in the track because different tracks need to display parameters per device
 function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
    -- on an nb track a CC slot is named after the voice param it sets
    local nb_on = ui.nb_enabled and params_data.device == 11
    local function cc_name(i)
      local cc = params_data['cc_' .. i]
-     return nb_on and ui.nb_label(tr, cc) or 'CC' .. cc
+     return nb_on and ui.nb_label(tr, params_data, i) or 'CC' .. cc
    end
    local tile = {
       {1, 'NOTE', function(i, _, lock) ui.draw_note(1, 8, params_data,i, ui_index, lock) end },
@@ -872,7 +893,7 @@ function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
            end
         else
             if nb_on and v[1] > 6 then
-              v[3] = ui.nb_value(tr, params_data['cc_' .. (v[1] - 6)], v[3]) or '--'
+              v[3] = ui.nb_value(tr, params_data, v[1] - 6, v[3]) or '--'
             elseif v[1]  > 3 and  v[3] < 0 and wsyn_on == false  then 
               v[3] = '--' 
             elseif  v[1] == 3 then 
