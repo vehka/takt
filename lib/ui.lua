@@ -586,6 +586,8 @@ function ui.tile(index, name, value, ui_index, lock, custom)
                 disp_value = "CRW34" 
             elseif value == 10 and params:get("takt_crow") == 4 then 
                 disp_value = "JFCW" 
+            elseif value == 11 and ui.nb_enabled then 
+                disp_value = "NB" 
             else
                 disp_value = disp_value 
             end
