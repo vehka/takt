@@ -422,13 +422,23 @@ local function nb_set_param(id, val)
   end
 end
 
--- the value a slot would set, as text; short = only when it isn't a plain number (for the tile)
+-- a voice param's current value on the 0-127 scale of a slot
+local function nb_current(id)
+  local p = params:lookup_param(id)
+  if p.t == params.tCONTROL or p.t == params.tTAPER then return util.round(params:get_raw(id) * 127) end
+  local lo, hi = 1, p.count
+  if p.t == params.tNUMBER then lo, hi = p.min, p.max end
+  return hi > lo and util.round(util.linlin(lo, hi, 0, 127, params:get(id))) or 0
+end
+
+-- the value a slot sets, as text; an unset slot (-1) shows the param's current value.
+-- short = what fits on a tile: an option's first letters, else the 0-127 number
 local function nb_value_string(id, val, short)
-  if val < 0 then return not short and "--" or nil end
+  if val < 0 then val = nb_current(id) end
   local p = params:lookup_param(id)
   local v, raw = nb_map(p, val)
   if p.t == params.tOPTION then return short and p.options[v]:sub(1, 4) or p.options[v] end
-  if short then return nil end
+  if short then return val end
   if p.t == params.tCONTROL then
     local units = p.controlspec.units or ""
     return util.round(p.controlspec:map(v), 0.01) .. (units ~= "" and " " .. units or "")
@@ -437,15 +447,17 @@ local function nb_value_string(id, val, short)
 end
 
 -- turn a slot value: number and option params move one value per click, the
--- rest move through 0-127; below the lowest value is -1 (leave the param alone)
+-- rest move through 0-127. An unset slot (-1) starts from the param's current
+-- value; turning below the lowest value unsets it again
 local function nb_step_value(id, val, d)
   local p = params:lookup_param(id)
   local lo, hi = 1, p.count
   if p.t == params.tNUMBER then lo, hi = p.min, p.max end
+  if val < 0 then val = nb_current(id) end
   if p.t == params.tCONTROL or p.t == params.tTAPER or hi - lo >= 127 or hi == lo then
     return util.clamp(val + d, -1, 127)
   end
-  local k = val < 0 and lo - 1 or nb_map(p, val)
+  local k = nb_map(p, val)
   k = util.clamp(k + d, lo - 1, hi)
   return k < lo and -1 or util.round(util.linlin(lo, hi, 0, 127, k))
 end
@@ -1712,8 +1724,9 @@ function redraw(stage)
       if nb_overlay then
         local list = nb_track_params(tr)
         local target = list and list[redraw_params[1]['cc_' .. nb_overlay]]
+        local val = redraw_params[1]['cc_' .. nb_overlay .. '_val']
         ui.nb_overlay(nb_overlay, target and target.name or "--",
-          target and nb_value_string(target.id, redraw_params[1]['cc_' .. nb_overlay .. '_val']) or "--")
+          target and nb_value_string(target.id, val) or "--", val >= 0)
       end
     end
   end
