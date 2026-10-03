@@ -455,7 +455,14 @@ With the [nb](https://github.com/sixolet/nb) library installed in `dust/code/nb`
 2. In PARAMS > OUTPUTS > nb voices, choose a voice for the track (tracks 8-14 each have their own)
 3. Set the track's **Device** to 11 (`NB`)
 
-The voice's own parameters appear at the end of PARAMS once it is selected. Notes, velocity, length and chords are sent to the voice; channel, program change and CCs are not used. The voice choices are saved with the project.
+The voice's own parameters appear at the end of PARAMS once it is selected. Notes, velocity, length and chords are sent to the voice; channel and program change are not used. The voice choices are saved with the project.
+
+**Voice parameters on the CC slots**: on an nb track the six CC tiles set parameters of the voice instead of sending MIDI CCs.
+
+- The tile's label is the parameter it points at (for example `TIMB`, `MORP`). Choose it the same way as a CC number (ui_index 14-19); the list is the voice's own parameters, in PARAMS menu order.
+- The tile's value (0-127) is scaled to the parameter's range; `--` leaves the parameter alone.
+- Values can be parameter-locked per step and used as LFO targets, like CCs. As with a CC, the parameter keeps the last value sent until another step changes it.
+- The slots point at parameters by position in the voice's list, so check them after changing a track to a different voice.
 
 ### MIDI Recording
 
