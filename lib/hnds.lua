@@ -76,6 +76,8 @@ local function make_sh(n)
 end
 
 
+local lfo_metro
+
 function lfo.init()
   params:add_separator("modulation")
   for i = 1, number_of_outputs do
@@ -98,7 +100,7 @@ function lfo.init()
     params:add_option(i .. "lfo", i .. " lfo", {"off", "on"}, 1)
   end
 
-  local lfo_metro = metro.init()
+  lfo_metro = metro.init()
   lfo_metro.time = .01
   lfo_metro.count = -1
   lfo_metro.event = function()
@@ -120,6 +122,15 @@ function lfo.init()
     lfo.process()
   end
   lfo_metro:start()
+end
+
+-- stop the metro before the script's params go away. A tick that is already
+-- queued still arrives after that, so it gets nothing to run
+function lfo.cleanup()
+  if lfo_metro then
+    lfo_metro:stop()
+    lfo_metro.event = nil
+  end
 end
 
 

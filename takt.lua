@@ -1212,6 +1212,10 @@ function init()
     redraw_metro:start()
 end
 
+function cleanup()
+  lfo.cleanup()
+end
+
 function clocked_seq()
     if params:string("clock_source") ~= "midi" then
         clock.sync(4) -- wait until the "1" of a 4/4 count
