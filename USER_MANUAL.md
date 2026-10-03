@@ -443,13 +443,13 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 6. **w/syn**: WaveShaper synthesizer (via Crow i2c)
 7. **Crow**: CV output (4 channels, gate/pitch)
 8-10. **Crow "2 voices" and "jf + crow" modes**: shown as `CRW12`, `CRW34` and `JFCW`, but they do not produce output yet
-11. **NB**: an [nb](https://github.com/sixolet/nb) voice (only when nb is installed)
+11. **NB**: an [nb](https://github.com/sixolet/nb) voice (only when the nb library is found)
 
 The encoder skips devices that are not enabled (5-10) or installed (11). A step that still points at one, for example in a project made with other settings, shows `--` and plays nothing.
 
 ### nb Voices
 
-With the [nb](https://github.com/sixolet/nb) library installed in `dust/code/nb`, each MIDI track can play an nb voice, such as the ones added by the emplaitress or nb_polyperc mods.
+With the [nb](https://github.com/sixolet/nb) library on the norns (installed in `dust/code/nb`, or bundled in another script's `lib/nb`), each MIDI track can play an nb voice, such as the ones added by the emplaitress or nb_polyperc mods.
 
 1. Install nb and at least one nb voice mod, enable the mod in SYSTEM > MODS and restart
 2. In PARAMS > OUTPUTS > nb voices, choose a voice for the track (tracks 8-14 each have their own)
