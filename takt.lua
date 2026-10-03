@@ -26,6 +26,7 @@ local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
 local nb_voice_params = {} -- [voice name] = list of { id, label, name }: the params a track's CC slots can set
 local nb_overlay = false -- CC slot (1-6) shown in the nb param overlay, opened with K2
+local nb_pending -- param picked with E2 in the overlay; it takes effect on E3 or when K2 closes it
 local nb_clear_hold -- clock that clears the slot's locks while K3 is held in the overlay
 local nb_cleared = 0 -- time of the last clear, for the overlay's confirmation
 -- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
@@ -1078,6 +1079,38 @@ local function cc_locks(tr, i, clear)
   return n
 end
 
+-- on an nb track a slot's param is picked in the overlay, so that the sequencer
+-- doesn't write the slot's values to every param scrolled past
+local function nb_pick(tr, s, i)
+  if data[data.pattern][tr].params[s].device ~= NB_DEVICE or not nb then return false end
+  nb_overlay, nb_pending = i, nil
+  return true
+end
+
+-- make the param picked in the overlay the slot's param. The slot's value, and
+-- at track level its step locks, were meant for the old param, so they are dropped
+local function nb_commit()
+  local pending, i = nb_pending, nb_overlay
+  nb_pending = nil
+  if not pending or not i then return end
+  local tr = data.selected[1]
+  local steps = data[data.pattern][tr].params
+  local sel = is_lock()
+  if type(sel) == 'string' then
+    if steps[sel]['cc_' .. i] == pending then return end
+    cc_locks(tr, i, true)
+    steps[sel]['cc_' .. i] = pending
+    steps[sel]['cc_' .. i .. '_val'] = -1
+  else
+    local first = get_step(sel)
+    if steps[first]['cc_' .. i] == pending then return end
+    for pos = first, first + 15 do
+      steps[pos]['cc_' .. i] = pending
+      steps[pos]['cc_' .. i .. '_val'] = -1
+    end
+  end
+end
+
 --@chailight - inserted additional function to support chord selection
 local midi_step_params = {
 
@@ -1171,21 +1204,27 @@ local midi_step_params = {
   end,
   
   [14] = function(tr, s, d) -- 
+      if nb_pick(tr, s, 1) then return end
       data[data.pattern][tr].params[s].cc_1 = util.clamp(data[data.pattern][tr].params[s].cc_1 + d, 1, cc_max(tr, s))
   end,
   [15] = function(tr, s, d) -- 
+      if nb_pick(tr, s, 2) then return end
       data[data.pattern][tr].params[s].cc_2 = util.clamp(data[data.pattern][tr].params[s].cc_2 + d, 1, cc_max(tr, s))
   end,
   [16] = function(tr, s, d) -- 
+      if nb_pick(tr, s, 3) then return end
       data[data.pattern][tr].params[s].cc_3 = util.clamp(data[data.pattern][tr].params[s].cc_3 + d, 1, cc_max(tr, s))
   end,
   [17] = function(tr, s, d) -- 
+      if nb_pick(tr, s, 4) then return end
       data[data.pattern][tr].params[s].cc_4 = util.clamp(data[data.pattern][tr].params[s].cc_4 + d, 1, cc_max(tr, s))
   end,
   [18] = function(tr, s, d) -- 
+      if nb_pick(tr, s, 5) then return end
       data[data.pattern][tr].params[s].cc_5 = util.clamp(data[data.pattern][tr].params[s].cc_5 + d, 1, cc_max(tr, s))
   end,
   [19] = function(tr, s, d) -- 
+      if nb_pick(tr, s, 6) then return end
       data[data.pattern][tr].params[s].cc_6 = util.clamp(data[data.pattern][tr].params[s].cc_6 + d, 1, cc_max(tr, s))
   end,
 
@@ -1565,11 +1604,17 @@ function enc(n,d)
 
   local tr = data.selected[1]
   local s = data.selected[2] and data.selected[2] or tostring(tr)
-  -- nb param overlay: E2 picks the slot's param, E3 its value
+  -- nb param overlay: E2 picks the slot's param, E3 sets its value
   local ui_index = data.ui_index
-  if nb_overlay and n > 1 and not browser.open then
-    data.ui_index = (n == 2 and 13 or 7) + nb_overlay
-    n = 3
+  if nb_overlay and n == 2 and not browser.open then
+    local list = nb_track_params(tr)
+    if list and #list > 0 then
+      nb_pending = util.clamp((nb_pending or redraw_params[1]['cc_' .. nb_overlay]) + d, 1, #list)
+    end
+    return
+  elseif nb_overlay and n == 3 and not browser.open then
+    nb_commit()
+    data.ui_index = 7 + nb_overlay
   end
 
   if browser.open then
@@ -1666,10 +1711,11 @@ function key(n,z)
   elseif n == 2 and z == 1 then
     local slot = data.ui_index >= 14 and data.ui_index - 13 or data.ui_index - 7
     if nb_overlay then
+      nb_commit()
       nb_overlay = false
     elseif data.selected[1] > 7 and not view.patterns and not view.sampling and slot >= 1 and slot <= 6
       and redraw_params[1].device == NB_DEVICE and nb then
-      nb_overlay = slot
+      nb_overlay, nb_pending = slot, nil
     elseif view.patterns then
       set_view(view.notes_input and (data.selected[1] < 8 and 'steps_engine' or 'steps_midi'))
     elseif browser.open then
@@ -1754,11 +1800,15 @@ function redraw(stage)
       if nb_overlay and redraw_params[1].device ~= NB_DEVICE then nb_overlay = false end
       if nb_overlay then
         local list = nb_track_params(tr)
-        local target = list and list[redraw_params[1]['cc_' .. nb_overlay]]
-        local val = redraw_params[1]['cc_' .. nb_overlay .. '_val']
+        local cc = redraw_params[1]['cc_' .. nb_overlay]
+        local picking = nb_pending and nb_pending ~= cc
+        local target = list and list[nb_pending or cc]
+        local val = picking and -1 or redraw_params[1]['cc_' .. nb_overlay .. '_val']
         local locks = cc_locks(tr, nb_overlay)
+        local lock_text = locks .. (locks == 1 and " lock" or " locks")
         local note = util.time() - nb_cleared < 1.5 and "locks cleared"
-          or locks > 0 and locks .. (locks == 1 and " lock" or " locks") .. ": hold K3"
+          or picking and (not data.selected[2] and locks > 0 and "drops " .. lock_text or "new param")
+          or locks > 0 and lock_text .. ": hold K3"
         ui.nb_overlay(nb_overlay, target and target.name or "--",
           target and nb_value_string(target.id, val) or "--", val >= 0, note)
       end
