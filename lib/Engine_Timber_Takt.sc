@@ -19,6 +19,8 @@ Engine_Timber_Takt : CroneEngine {
 	var lfos;
 	var mixer;
 	var reverb;
+	var reverbRunning = true;
+	var reverbSilenceFunc;
 	var delay;
 
 	var lfoBus;
@@ -136,6 +138,14 @@ Engine_Timber_Takt : CroneEngine {
 			var id = msg[2];
 			scriptAddress.sendBundle(0, ['/enginePlayPosition', msg[3].asInteger, msg[4].asInteger, msg[5]]);
 		}, path: '/replyPlayPosition', srcID: context.server.addr);
+
+		// JPverb is expensive, so pause it once its input and tail are silent (see wakeReverb)
+		reverbSilenceFunc = OSCFunc({
+			if(voiceList.any({ arg v; samples[v.sampleId].reverbSend > -90 }).not, {
+				reverb.run(false);
+				reverbRunning = false;
+			});
+		}, path: '/reverbSilent', srcID: context.server.addr);
 
 		// Sample defaults
 		samples = Array.fill(maxSamples, { defaultSample.deepCopy; });
@@ -408,8 +418,11 @@ Engine_Timber_Takt : CroneEngine {
 
 			 arg in, out, reverbTime=10, damp=0.1, size=3.0, diff=0.7, modDepth=0.1, modFreq=2, low=1, mid=1, high=1, lowcut=500, highcut=200;
 			
-			 var signal = In.ar(in, 2);       
-      		 signal = JPverb.ar(signal, reverbTime, damp, size, diff, modDepth, modFreq, low, mid, high, lowcut, highcut);
+			 var input = In.ar(in, 2);
+			 var signal = JPverb.ar(input, reverbTime, damp, size, diff, modDepth, modFreq, low, mid, high, lowcut, highcut);
+			 // Report silence (-80dB for 0.5s) of input and tail. The initial impulse arms DetectSilence so it also fires at startup.
+			 var silent = DetectSilence.ar(input.abs.sum + signal.abs.sum + Impulse.ar(0), 0.0001, 0.5);
+			 SendReply.kr(A2K.kr(silent), '/reverbSilent');
 			 Out.ar(out, signal);
 
 
@@ -922,6 +935,8 @@ Engine_Timber_Takt : CroneEngine {
 
 		newVoice = (id: voiceId, sampleId: sampleId, gate: 1);
 
+		if(sample.reverbSend > -90, { this.wakeReverb; });
+
 		// Delay adding a new synth until after killDuration if need be
 		newVoice.startRoutine = Routine {
 			delay.wait;
@@ -1025,6 +1040,14 @@ Engine_Timber_Takt : CroneEngine {
 		voiceList.addFirst(newVoice);
 	}
 
+
+
+	wakeReverb {
+		if(reverbRunning.not, {
+			reverb.run(true);
+			reverbRunning = true;
+		});
+	}
 
 
 	// Commands
@@ -1433,6 +1456,7 @@ Engine_Timber_Takt : CroneEngine {
 		this.addCommand(\reverbSend, "ii", {
 			arg msg;
 			this.setArgOnSample(msg[1], \reverbSend, msg[2]);
+			if((msg[2] > -90).and(voiceList.any({ arg v; v.sampleId == msg[1] })), { this.wakeReverb; });
 		});
 
 		this.addCommand(\delaySend, "ii", {
@@ -1543,6 +1567,7 @@ Engine_Timber_Takt : CroneEngine {
 		// NOTE: Are these already getting freed elsewhere?
 		scriptAddress.free;
 		replyFunc.free;
+		reverbSilenceFunc.free;
 		synthNames.free;
 		voiceList.free;
 		players.free;
