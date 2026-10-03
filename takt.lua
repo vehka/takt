@@ -327,6 +327,10 @@ local function load_project(pth)
   
         if saved[1] then params:read(norns.state.data .. saved[1] .. ".pset") end
         reset_positions()
+        -- the screen shows the project's selected track, not the one from before
+        local tr = data.selected[1]
+        redraw_params[1] = data[data.pattern][tr].params[tostring(tr)]
+        redraw_params[2] = redraw_params[1]
     else
         print("no data")
     end
