@@ -15,11 +15,21 @@ local linn = include('lib/linn')
 local lfo = include("lib/hnds")
 -- optional: https://github.com/andr-ew/ledmap remaps grid levels for 4-step (2011) grids
 local lm = util.file_exists(_path.code .. 'ledmap/lib/ledmap.lua') and include('ledmap/lib/ledmap') or nil
+-- optional: https://github.com/sixolet/nb lets MIDI tracks play nb voices (device NB)
+local nb = util.file_exists(_path.code .. 'nb/lib/nb.lua') and include('nb/lib/nb') or nil
 local music = require 'musicutil'
 local fileselect = require('fileselect')
 local textentry = require('textentry')
 --
 local midi_out_devices = {}
+local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow devices
+local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
+-- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
+local null_device = {
+  note_on = function() end, note_off = function() end,
+  cc = function() end, program_change = function() end,
+}
+null_device.__index = null_device
 local REC_CC = 38
 --
 -- supporting variables for @chailight mods
@@ -373,6 +383,65 @@ local function set_locks(step_param)
     end
 end
 
+local function out_device(tr, device)
+  if device == NB_DEVICE then return nb_out[tr] or null_device end
+  return midi_out_devices[device] or null_device
+end
+
+-- nb voices take velocity as 0-1 and have no channels, CCs or program changes
+local function make_nb_out(tr)
+  local voice = params:lookup_param("takt_nb_voice_" .. tr)
+  local sounding = {} -- [note] = player it was started on, so a voice change can't hang it
+  local out = setmetatable({}, null_device)
+  function out:note_on(note, vel)
+    if sounding[note] then sounding[note]:note_off(note) end
+    local player = voice:get_player()
+    sounding[note] = player
+    player:note_on(note, (vel or 100) / 127)
+  end
+  function out:note_off(note)
+    if sounding[note] then
+      sounding[note]:note_off(note)
+      sounding[note] = nil
+    end
+  end
+  return out
+end
+
+local function nb_add_params()
+  if not nb or params.lookup["takt_nb_voice_8"] then return end
+  nb:init()
+  params:add_group("takt_nb", "nb voices", 14) -- nb:add_param adds 2 params each
+  for tr = 8, 14 do
+    nb:add_param("takt_nb_voice_" .. tr, "track " .. tr .. " voice")
+    nb_out[tr] = make_nb_out(tr)
+  end
+  nb:add_player_params()
+  ui.nb_enabled = true
+end
+
+-- devices the DEV tile can show by name; the encoder skips the others
+local function device_available(device)
+  if device <= 4 then return true end
+  if device == 5 then return takt_jf_enabled end
+  if device == 6 then return takt_wsyn_enabled end
+  if device == 7 then return takt_crow_mode == 2 end
+  if device == 8 or device == 9 then return takt_crow_mode == 3 end
+  if device == 10 then return takt_crow_mode == 4 end
+  return device == NB_DEVICE and nb ~= nil
+end
+
+local function next_device(device, d)
+  local dir = d > 0 and 1 or -1
+  for _ = 1, math.abs(d) do
+    local nxt = device + dir
+    while nxt >= 1 and nxt <= NB_DEVICE and not device_available(nxt) do nxt = nxt + dir end
+    if nxt < 1 or nxt > NB_DEVICE then break end
+    device = nxt
+  end
+  return device
+end
+
 local function set_cc(tr, step_param)
   for i = 1, 6 do
     local cc = step_param['cc_' .. i] 
@@ -387,7 +456,7 @@ local function set_cc(tr, step_param)
         end
     end
     if val > -1 then
-      midi_out_devices[step_param.device]:cc(cc, val, step_param.channel)
+      out_device(tr, step_param.device):cc(cc, val, step_param.channel)
     end
   end
 end
@@ -583,17 +652,19 @@ local function kill_all_midi()
       end
     end
   end
+  if nb then nb:stop_all() end
 end
 
 -- send note-off for the note (and chord) still sounding on a MIDI track, once
 local function midi_note_off(tr)
   local c = choke[tr]
   if not c[6] then return end
-  midi_out_devices[c[1]]:note_off(c[2], c[3], c[4])
+  local dev = out_device(tr, c[1])
+  dev:note_off(c[2], c[3], c[4])
   local chord = get_chord(c[2], c[7])
   if chord then
       for j = 2, #chord do
-          midi_out_devices[c[1]]:note_off(chord[j], c[3], c[4])
+          dev:note_off(chord[j], c[3], c[4])
       end
   end
   c[6] = nil
@@ -747,19 +818,20 @@ local function seqrun(counter)
                       crow.output[4].volts = util.clamp((crow4/12),0,10) + crow_out_4_offset_v -- avoid clipping 10V
                   end
               else -- handle normal midi output
+                  local dev = out_device(tr, step_param.device)
                   set_cc(tr, step_param)
                   
                   if step_param.program_change >= 0 then
-                    midi_out_devices[step_param.device]:program_change(step_param.program_change, step_param.channel)
+                    dev:program_change(step_param.program_change, step_param.channel)
                   end
 
                   midi_note_off(tr) -- end the previous note if it is still sounding
-                  midi_out_devices[step_param.device]:note_on( step_param.note, step_param.velocity, step_param.channel )
+                  dev:note_on( step_param.note, step_param.velocity, step_param.channel )
                   --print("note", step_param.note)
                   local chord = get_chord(step_param.note, step_param.chord)
                   if chord then
                       for i = 2, #chord do
-                          midi_out_devices[step_param.device]:note_on( chord[i], step_param.velocity, step_param.channel )
+                          dev:note_on( chord[i], step_param.velocity, step_param.channel )
                       end
                   end
                   choke[tr] = { step_param.device, step_param.note, step_param.velocity, step_param.channel, pos, step_param.length, step_param.chord} 
@@ -790,8 +862,8 @@ local function midi_event(d)
     PATTERN_REC = not PATTERN_REC
   -- Note off
   elseif msg.type == "note_off" then
-      if tr > 7 and step_param.device < 4 then
-            midi_out_devices[step_param.device]:note_off( msg.note, msg.vel, step_param.channel )
+      if tr > 7 and (step_param.device < 4 or step_param.device == NB_DEVICE) then
+            out_device(tr, step_param.device):note_off( msg.note, msg.vel, step_param.channel )
       end
     --engine.noteOff(tr)
   -- Note on
@@ -811,7 +883,7 @@ local function midi_event(d)
           crow.output[2].action = string.format("pulse(%.3f,10)", (step_param.length* 60/data[data.pattern].bpm/10))
           crow.output[2].execute() -- this will be a trigger? what if we want a gate = note length?
       else
-          midi_out_devices[step_param.device]:note_on( msg.note, msg.vel, step_param.channel )
+          out_device(tr, step_param.device):note_on( msg.note, msg.vel, step_param.channel )
       end
       if is_running and PATTERN_REC then --@chailight unifying on a single is_running flag
         place_note(tr, pos, msg.note)
@@ -885,7 +957,7 @@ local midi_step_params = {
   end,
   --@chailight increase the options for the device to enable selecting JF, WSyn and crow 
   [6] = function(tr, s, d) -- device
-      data[data.pattern][tr].params[s].device = util.clamp(data[data.pattern][tr].params[s].device + d, 1, 10)
+      data[data.pattern][tr].params[s].device = next_device(data[data.pattern][tr].params[s].device, d)
       if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_1_val = params:get("wsyn_ramp") 
         data[data.pattern][tr].params[s].cc_2_val = params:get("wsyn_fm_index") 
@@ -1229,6 +1301,7 @@ function init()
           crow.output[4].volts = 0.0
         end
     end)
+    nb_add_params()
     wsyn_add_params()
     params:bang()
     params:set("wsyn_init",1)
@@ -1281,6 +1354,7 @@ function cleanup()
   if lm and grid_brightness_mode == 2 then
     lm:unmap(g)
   end
+  if nb then nb:stop_all() end
 end
 
 function clocked_seq()
@@ -1505,7 +1579,7 @@ function g.key(x, y, z)
   if view.notes_input and not ALT and not SHIFT then
     local tr = data.selected[1]
     local device = data[data.pattern][tr].params[tr].device
-    local note = linn.grid_key(x, y, z, device and midi_out_devices[device])
+    local note = linn.grid_key(x, y, z, device and out_device(tr, device))
     local vel = data[data.pattern][tr].params[tr].velocity
     local len  = data[data.pattern][tr].params[tr].length
     --@chailight support for jf and wsyn output devices needed here

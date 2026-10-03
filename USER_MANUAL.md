@@ -393,7 +393,7 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 3. **Velocity**: Note velocity (0-127)
 4. **Length**: Note duration in steps (1-256)
 5. **Channel**: MIDI channel (1-16)
-6. **Device**: Output device (1-10, see [Output Devices](#output-devices))
+6. **Device**: Output device (1-11, see [Output Devices](#output-devices))
 7. **Program Change**: MIDI program number (-1=off, 0-127)
 8-13. **CC Values**: Control Change values (0-127)
 14-19. **CC Numbers**: Control Change numbers (1-127)
@@ -442,7 +442,20 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 5. **Just Friends**: i2c modular synth (via Crow)
 6. **w/syn**: WaveShaper synthesizer (via Crow i2c)
 7. **Crow**: CV output (4 channels, gate/pitch)
-8-17. **Additional MIDI devices** (if available via nbout mod)
+8-10. **Crow "2 voices" and "jf + crow" modes**: shown as `CRW12`, `CRW34` and `JFCW`, but they do not produce output yet
+11. **NB**: an [nb](https://github.com/sixolet/nb) voice (only when nb is installed)
+
+The encoder skips devices that are not enabled (5-10) or installed (11). A step that still points at one, for example in a project made with other settings, shows `--` and plays nothing.
+
+### nb Voices
+
+With the [nb](https://github.com/sixolet/nb) library installed in `dust/code/nb`, each MIDI track can play an nb voice, such as the ones added by the emplaitress or nb_polyperc mods.
+
+1. Install nb and at least one nb voice mod, enable the mod in SYSTEM > MODS and restart
+2. In PARAMS > OUTPUTS > nb voices, choose a voice for the track (tracks 8-14 each have their own)
+3. Set the track's **Device** to 11 (`NB`)
+
+The voice's own parameters appear at the end of PARAMS once it is selected. Notes, velocity, length and chords are sent to the voice; channel, program change and CCs are not used. The voice choices are saved with the project.
 
 ### MIDI Recording
 
@@ -759,7 +772,7 @@ SFT = Shift (divider/mute)
 | Velocity | 0-127 | Note velocity |
 | Length | 1-256 | Note duration (steps) |
 | Channel | 1-16 | MIDI channel |
-| Device | 1-17 | Output device |
+| Device | 1-11 | Output device |
 | Program | -1 to 127 | Program change |
 | CC 1-6 | 0-127 | CC values |
 
