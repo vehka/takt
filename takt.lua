@@ -18,8 +18,16 @@ local linn = include('lib/linn')
 local lfo = include("lib/hnds")
 -- optional: https://github.com/andr-ew/ledmap remaps grid levels for 4-step (2011) grids
 local lm = util.file_exists(_path.code .. 'ledmap/lib/ledmap.lua') and include('ledmap/lib/ledmap') or nil
--- optional: https://github.com/sixolet/nb lets MIDI tracks play nb voices (device NB)
-local nb = util.file_exists(_path.code .. 'nb/lib/nb.lua') and include('nb/lib/nb') or nil
+-- optional: https://github.com/sixolet/nb lets MIDI tracks play nb voices (device NB).
+-- Use the installed library, or else the copy that another script or mod bundles
+local function find_nb()
+  if util.file_exists(_path.code .. 'nb/lib/nb.lua') then return 'nb/lib/nb' end
+  for _, dir in ipairs(util.scandir(_path.code)) do
+    if util.file_exists(_path.code .. dir .. 'lib/nb/lib/nb.lua') then return dir .. 'lib/nb/lib/nb' end
+  end
+end
+local nb_path = find_nb()
+local nb = nb_path and include(nb_path) or nil
 local music = require 'musicutil'
 local fileselect = require('fileselect')
 local textentry = require('textentry')
