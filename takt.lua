@@ -1447,9 +1447,8 @@ function g.key(x, y, z)
           crow.output[1].volts = (note-0)/12 + crow_out_1_offset_v 
           crow.output[2].action = string.format("pulse(%.3f,10)", (len * 60/data[data.pattern].bpm/10))
           crow.output[2].execute() -- this will be a trigger? what if we want a gate = note length?
-      else
-          midi_out_devices[step_parame.device]:note_on( msg.note, msg.vel, step_param.channel )
       end
+      -- MIDI devices: linn.grid_key() has already sent the note
       if is_running and PATTERN_REC then 
         place_note(tr, pos, note )
       end
