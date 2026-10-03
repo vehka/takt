@@ -508,17 +508,24 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 
 ### LFOs (Low Frequency Oscillators)
 
-**4 Main LFOs** (synchronized to master clock):
+**4 Main LFOs**, for the CC slots of the MIDI tracks (8-14):
 
 **Access**: PARAMS > MODULATION > lfo 1-4
 
 **Per-LFO parameters**:
-- **Target**: Modulation destination (select from lfo_targets list)
-- **Shape**: Waveform (sine, triangle, saw, square, random, etc.)
-- **Frequency**: LFO rate (Hz)
-- **Depth**: Modulation amount (0-100%)
-- **Phase**: Start phase offset (0-360°)
-- **Offset**: DC offset (-4.0 to +3.0)
+- **Target**: The CC slot the LFO moves, e.g. `CC4 10` is the fourth CC slot of track 10. On a track that plays an nb voice this is the voice parameter the slot points at.
+- **Shape**: sine, square, s+h (a new random value every cycle), triangle, ramp up, ramp down
+- **Mode**: `sync` follows the clock, `free` runs in seconds
+- **Cycle**: How long one cycle takes.
+  - In `sync` mode: from 1/32 note to 32 bars (`T` is a triplet, `.` a dotted note). The cycles are counted from the start of the pattern, so a 4 bar LFO is at the same point at the same place of the pattern every time, with any clock source. A synced LFO stands still while the sequencer is stopped.
+  - In `free` mode: 0.05 to 300 seconds. A free LFO also runs while the sequencer is stopped.
+- **Center**: The value the LFO moves around (0-127)
+- **Depth**: How far it moves to each side of the center (0-127). Center 64 with depth 64 covers the whole range; center 80 with depth 15 moves between 65 and 95. Values past 0 or 127 stop there.
+- **LFO**: on / off
+
+An LFO sets its slot at every step that plays, and keeps moving it between the steps: MIDI tracks get a stream of CC messages, nb voices have their parameter changed. With emplaitress, harmonics, timbre and morph also change in notes that are already sounding (in its poly and mono styles).
+
+A step that locks the slot's value wins over the LFO: the locked value holds from that step until the track's next step without a lock, and then the LFO carries on.
 
 **Engine LFO modulation** (per-step):
 - **ui_index 5**: Frequency modulation (LFO 1)
@@ -526,12 +533,6 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 - **ui_index 13**: Amplitude modulation (LFO 1)
 - **ui_index 14**: Filter frequency modulation (LFO 2)
 
-**LFO Targets** (examples):
-- CC values for MIDI tracks (8-14)
-- Sample parameters
-- Filter frequency
-- Amplitude
-- Pan
 
 **2 Engine LFOs** (Timber internal):
 

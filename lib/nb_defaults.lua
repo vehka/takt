@@ -4,6 +4,8 @@
 -- match: Lua pattern for the voice's name
 -- slots: keys of the params the six CC slots point at until others are picked
 -- skip: keys of params that do nothing when a sequencer plays the voice
+-- follow: keys of params the voice reads at note on only, where
+--   modulate_note(note, key, 0) makes a sounding note take the param's new value
 -- variant: key of an option param (emplaitress's model) whose choices have
 --   slots of their own, listed by option name in variants
 --
@@ -21,6 +23,7 @@ return {
     match = "^emplait %d+$",
     slots = plaits_gated,
     skip = { "note" }, -- only read by the voice's own trigger and gate params
+    follow = { "harmonics", "timbre", "morph" },
     variant = "model",
     variants = {
       ["classic analog"] = plaits_gated,

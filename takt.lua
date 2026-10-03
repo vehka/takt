@@ -15,7 +15,7 @@ local timber = include('lib/timber_takt')
 local takt_utils = include('lib/_utils')
 local ui = include('lib/ui')
 local linn = include('lib/linn')
-local lfo = include("lib/hnds")
+local lfo = include("lib/lfos")
 -- optional: https://github.com/andr-ew/ledmap remaps grid levels for 4-step (2011) grids
 local lm = util.file_exists(_path.code .. 'ledmap/lib/ledmap.lua') and include('ledmap/lib/ledmap') or nil
 -- optional: https://github.com/sixolet/nb lets MIDI tracks play nb voices (device NB).
@@ -45,6 +45,8 @@ local nb_ask -- { tr, variant }: the track's voice changed model and its slots h
 local nb_ask_key -- the key that answered, until it is released
 local nb_gen = 0 -- counts set_cc() calls, to tell which locks the current step renewed
 local nb_pending -- param picked with E2 in the overlay; it takes effect on E3 or when K2 closes it
+local lfo_held = {} -- [track] = { [CC slot] = true }: slots a step lock holds, which their LFO leaves alone
+for tr = 8, 14 do lfo_held[tr] = {} end
 local nb_clear_hold -- clock that clears the slot's locks while K3 is held in the overlay
 local nb_cleared = 0 -- time of the last clear, for the overlay's confirmation
 -- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
@@ -257,6 +259,7 @@ local function reset_positions()
   for i = 1, 14 do
     data[data.pattern].track.pos[i] = 0
   end
+  lfo.reset()
 end
 
 local prev_mix_val = -1
@@ -653,6 +656,9 @@ local function make_nb_out(tr)
       sounding[note] = nil
     end
   end
+  function out:modulate(key, value)
+    for note, player in pairs(sounding) do player:modulate_note(note, key, value) end
+  end
   return out
 end
 
@@ -722,24 +728,33 @@ local function next_device(device, d)
   return device
 end
 
+-- the LFO that is on and has CC slot i of a track as its target, or nil
+local function slot_lfo(tr, i)
+  local target = (tr - 8) * 6 + i + 1
+  local found
+  for j = 1, 4 do
+    if lfo[j].on and lfo[j].target == target then found = j end
+  end
+  return found
+end
+
 local function set_cc(tr, step_param)
   local nb_track = step_param.device == NB_DEVICE and nb ~= nil
+  local held = lfo_held[tr]
   nb_gen = nb_gen + 1
   for i = 1, 6 do
     local cc = step_param['cc_' .. i] 
     local val = step_param['cc_' .. i .. '_val'] 
-    -- on an nb track a value of the step's own is a lock; the track's value isn't
+    -- a value of the step's own is a lock; the track's value isn't
     -- (a step without locks is played from the track's table, which has no metatable)
-    local lock = nb_track and getmetatable(step_param) ~= nil and rawget(step_param, 'cc_' .. i .. '_val') ~= nil
-    -- @chailight: add support for midi CCs to be additional LFO targets
-    for j = 1, 4 do
-        local target = params:get(j .. "lfo_target")
-        --print ("state", j, params:get(j .. "lfo"))
-        if  tonumber(target) - 1 - ((tr - 8) * 6) == i and params:get(j .. "lfo") == 2 then
-            val = math.floor(math.abs(lfo.scale(lfo[j].slope, -1, 1, 1, 127)))
-            lock = false
-            --print("target", target - 1 - ((tr - 8) * 6), val)
-        end
+    local lock = val > -1 and getmetatable(step_param) ~= nil and rawget(step_param, 'cc_' .. i .. '_val') ~= nil
+    -- an LFO sets the slot's value, except on a step that locks it: the lock
+    -- holds the slot until the track's next step without one
+    local j = slot_lfo(tr, i)
+    held[i] = j and lock or nil
+    if j and not lock then
+      val = lfo.value(j)
+      lfo[j].sent = val
     end
     if val > -1 and step_param.device == NB_DEVICE then
       local target = nb_track and nb_slot(tr, step_param, i)
@@ -756,6 +771,25 @@ local function set_cc(tr, step_param)
   end
   -- a step without a lock plays with the params as they were before the locks
   if nb_track then nb_unlock(tr) end
+end
+
+-- between the steps an LFO keeps its slot moving, with the track's own settings
+function lfo.output(_, target, val)
+  local tr, i = 8 + (target - 2) // 6, (target - 2) % 6 + 1
+  if lfo_held[tr][i] then return end
+  local p = get_params(tr)
+  if p.device == NB_DEVICE then
+    local slot = nb and nb_slot(tr, p, i)
+    if not slot then return end
+    nb_set_param(slot.id, val)
+    -- a voice that reads the param at note on only is told to apply it to its sounding notes
+    local known = nb_track_params(tr).known
+    if known and known.follow and tab.contains(known.follow, slot.key) then
+      nb_out[tr]:modulate(slot.key, 0)
+    end
+  elseif p.device <= 4 then
+    out_device(tr, p.device):cc(p['cc_' .. i], val, p.channel)
+  end
 end
 
 local function move_params(tr, src, dst )
@@ -1740,9 +1774,7 @@ function init()
     crow_add_params()
 
     -- === MODULATION ===
-    for i = 1, 4 do
-        lfo[i].lfo_targets = lfo_targets
-    end
+    lfo.targets = lfo_targets
     lfo.init()
 
     -- === MIXER ===
@@ -1791,6 +1823,7 @@ function clocked_seq()
     if params:string("clock_source") ~= "midi" and params:string("clock_source") ~= "internal" then
         clock.sync(4) -- wait until the "1" of a 4/4 count (Link/Crow sync)
     end
+    lfo.start()
     while true do
         for i=1,256 do
           clock.sync(1/128)
@@ -1820,7 +1853,11 @@ function clock.transport.stop()
     if is_running then
         is_running = false 
         clock.cancel(sequencer_clock)
-        for tr = 8, 14 do nb_unlock(tr, true) end
+        for tr = 8, 14 do
+          nb_unlock(tr, true)
+          lfo_held[tr] = {}
+        end
+        lfo.stop()
         print("transport: stop")
     else 
         print("transport: already stopped")
