@@ -21,7 +21,7 @@ starting a new one.
 
 ## Effects from the fx mod
 
-Use the effects of the [fx mod](https://github.com/sixolet/fx) with takt's
+Use the effects of the [fx mod](https://github.com/vehka/fx) with takt's
 tracks.
 
 - The mod has two send buses (`~sendA`, `~sendB`) and one insert on the main
