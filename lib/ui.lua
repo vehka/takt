@@ -790,6 +790,27 @@ function ui.draw_delay(x, y, index )
   end
 end
 
+-- window over the MIDI screen with a CC slot's nb voice param and value in full
+function ui.nb_overlay(slot, name, value)
+  screen.level(0)
+  screen.rect(8, 12, 112, 40)
+  screen.fill()
+  screen.level(15)
+  screen.rect(8.5, 12.5, 111, 39)
+  screen.stroke()
+  screen.level(4)
+  screen.move(13, 22)
+  screen.text("nb param " .. slot)
+  screen.move(115, 22)
+  screen.text_right("K2 close")
+  screen.level(15)
+  screen.move(13, 34)
+  screen.text(name)
+  screen.level(8)
+  screen.move(13, 45)
+  screen.text(value)
+end
+
 --@chailight need to pass in the track because different tracks need to display parameters per device
 function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
    -- on an nb track a CC slot is named after the voice param it sets
@@ -843,6 +864,8 @@ function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
               v[3] = '--' 
             elseif  v[1] == 3 then 
               v[3] = util.round(util.linlin(1, 256, 1, 16,v[3]),0.01)
+            elseif nb_on and v[1] > 6 then
+              v[3] = ui.nb_value(tr, params_data['cc_' .. (v[1] - 6)], v[3]) or v[3]
             end
             if v[1] == 5 and v[3] == 6 and params:get("takt_wsyn") == 2 then
                 wsyn_on = true

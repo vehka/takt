@@ -27,7 +27,8 @@ local textentry = require('textentry')
 local midi_out_devices = {}
 local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow devices
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
-local nb_voice_params = {} -- [voice name] = list of { id, label }: the params a track's CC slots can set
+local nb_voice_params = {} -- [voice name] = list of { id, label, name }: the params a track's CC slots can set
+local nb_overlay = false -- CC slot (1-6) shown in the nb param overlay, opened with K2
 -- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
 local null_device = {
   note_on = function() end, note_off = function() end,
@@ -401,18 +402,52 @@ local function nb_param_label(name)
   return label:upper()
 end
 
+-- what a 0-127 slot value means for a voice param: a raw 0-1 value for
+-- continuous params (second result true), else one of the number/option values
+local function nb_map(p, val)
+  local x = util.clamp(val, 0, 127) / 127
+  if p.t == params.tCONTROL or p.t == params.tTAPER then return x, true end
+  local lo, hi = 1, p.count
+  if p.t == params.tNUMBER then lo, hi = p.min, p.max end
+  return util.round(util.linlin(0, 1, lo, hi, x)), false
+end
+
 -- set a voice param from a 0-127 value, only when that changes it (param actions can be costly)
 local function nb_set_param(id, val)
-  local p = params:lookup_param(id)
-  local x = util.clamp(val, 0, 127) / 127
-  if p.t == params.tCONTROL or p.t == params.tTAPER then
-    if params:get_raw(id) ~= x then params:set_raw(id, x) end
-  else
-    local lo, hi = 1, p.count
-    if p.t == params.tNUMBER then lo, hi = p.min, p.max end
-    local v = util.round(util.linlin(0, 1, lo, hi, x))
-    if params:get(id) ~= v then params:set(id, v) end
+  local v, raw = nb_map(params:lookup_param(id), val)
+  if raw then
+    if params:get_raw(id) ~= v then params:set_raw(id, v) end
+  elseif params:get(id) ~= v then
+    params:set(id, v)
   end
+end
+
+-- the value a slot would set, as text; short = only when it isn't a plain number (for the tile)
+local function nb_value_string(id, val, short)
+  if val < 0 then return not short and "--" or nil end
+  local p = params:lookup_param(id)
+  local v, raw = nb_map(p, val)
+  if p.t == params.tOPTION then return short and p.options[v]:sub(1, 4) or p.options[v] end
+  if short then return nil end
+  if p.t == params.tCONTROL then
+    local units = p.controlspec.units or ""
+    return util.round(p.controlspec:map(v), 0.01) .. (units ~= "" and " " .. units or "")
+  end
+  return tostring(raw and util.round(v, 0.01) or v)
+end
+
+-- turn a slot value: number and option params move one value per click, the
+-- rest move through 0-127; below the lowest value is -1 (leave the param alone)
+local function nb_step_value(id, val, d)
+  local p = params:lookup_param(id)
+  local lo, hi = 1, p.count
+  if p.t == params.tNUMBER then lo, hi = p.min, p.max end
+  if p.t == params.tCONTROL or p.t == params.tTAPER or hi - lo >= 127 or hi == lo then
+    return util.clamp(val + d, -1, 127)
+  end
+  local k = val < 0 and lo - 1 or nb_map(p, val)
+  k = util.clamp(k + d, lo - 1, hi)
+  return k < lo and -1 or util.round(util.linlin(lo, hi, 0, 127, k))
 end
 
 -- nb voices take velocity as 0-1 and have no channels or program changes;
@@ -454,7 +489,7 @@ local function nb_add_player_params()
         local list = {}
         for i = first, params.count do
           local p = params.params[i]
-          if settable[p.t] then list[#list + 1] = { id = p.id, label = nb_param_label(p.name) } end
+          if settable[p.t] then list[#list + 1] = { id = p.id, label = nb_param_label(p.name), name = p.name } end
         end
         nb_voice_params[name] = list
       end
@@ -477,6 +512,10 @@ local function nb_add_params()
   ui.nb_label = function(tr, cc)
     local list = nb_track_params(tr)
     return list and list[cc] and list[cc].label or "--"
+  end
+  ui.nb_value = function(tr, cc, val)
+    local list = nb_track_params(tr)
+    return list and list[cc] and nb_value_string(list[cc].id, val, true)
   end
 end
 
@@ -995,6 +1034,17 @@ local function cc_max(tr, s)
   return 127
 end
 
+-- turn CC slot i's value on an nb track; false when the step isn't an nb one
+local function nb_cc_val(tr, s, i, d)
+  local p = data[data.pattern][tr].params[s]
+  if p.device ~= NB_DEVICE then return false end
+  local list = nb and nb_track_params(tr)
+  local target = list and list[p['cc_' .. i]]
+  p['cc_' .. i .. '_val'] = target and nb_step_value(target.id, p['cc_' .. i .. '_val'], d)
+    or util.clamp(p['cc_' .. i .. '_val'] + d, -1, 127)
+  return true
+end
+
 --@chailight - inserted additional function to support chord selection
 local midi_step_params = {
 
@@ -1039,42 +1089,48 @@ local midi_step_params = {
   end,
   
   [8] = function(tr, s, d) -- 
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
+      if nb_cc_val(tr, s, 1, d) then
+      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_1_val = util.clamp(data[data.pattern][tr].params[s].cc_1_val + d, -50, 50)
       else
         data[data.pattern][tr].params[s].cc_1_val = util.clamp(data[data.pattern][tr].params[s].cc_1_val + d, -1, 127)
       end
   end,
   [9] = function(tr, s, d) -- 
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
+      if nb_cc_val(tr, s, 2, d) then
+      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_2_val = util.clamp(data[data.pattern][tr].params[s].cc_2_val + d, -50, 50)
       else
         data[data.pattern][tr].params[s].cc_2_val = util.clamp(data[data.pattern][tr].params[s].cc_2_val + d, -1, 127)
       end
   end,
   [10] = function(tr, s, d) -- 
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
+      if nb_cc_val(tr, s, 3, d) then
+      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_3_val = util.clamp(data[data.pattern][tr].params[s].cc_3_val + d, -50, 50)
       else
         data[data.pattern][tr].params[s].cc_3_val = util.clamp(data[data.pattern][tr].params[s].cc_3_val + d, -1, 127)
       end
   end,
   [11] = function(tr, s, d) -- 
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
+      if nb_cc_val(tr, s, 4, d) then
+      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_4_val = util.clamp(data[data.pattern][tr].params[s].cc_4_val + d, 1, 20)
       else
         data[data.pattern][tr].params[s].cc_4_val = util.clamp(data[data.pattern][tr].params[s].cc_4_val + d, -1, 127)
       end
   end,
   [12] = function(tr, s, d) -- 
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
+      if nb_cc_val(tr, s, 5, d) then
+      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_5_val = util.clamp(data[data.pattern][tr].params[s].cc_5_val + d, 1, 20)
       else
         data[data.pattern][tr].params[s].cc_5_val = util.clamp(data[data.pattern][tr].params[s].cc_5_val + d, -1, 127)
       end
   end,
   [13] = function(tr, s, d) -- 
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
+      if nb_cc_val(tr, s, 6, d) then
+      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
         data[data.pattern][tr].params[s].cc_6_val = util.clamp(data[data.pattern][tr].params[s].cc_6_val + d, -50, 50)
       else
         data[data.pattern][tr].params[s].cc_6_val = util.clamp(data[data.pattern][tr].params[s].cc_6_val + d, -1, 127)
@@ -1451,10 +1507,18 @@ function enc(n,d)
 
   local tr = data.selected[1]
   local s = data.selected[2] and data.selected[2] or tostring(tr)
+  -- nb param overlay: E2 picks the slot's param, E3 its value
+  local ui_index = data.ui_index
+  if nb_overlay and n > 1 and not browser.open then
+    data.ui_index = (n == 2 and 13 or 7) + nb_overlay
+    n = 3
+  end
+
   if browser.open then
     browser.enc(n, d)
   elseif n == 1 then
       
+      nb_overlay = false
       local offset = data.selected[1] > 7 and 7 or 0
       data.selected[1] = util.clamp(data.selected[1] + d, 1 + offset, 7 + offset)
       tr_change(data.selected[1])
@@ -1512,6 +1576,7 @@ function enc(n,d)
       sampling_params[data.ui_index](d)
     end
   end
+  if nb_overlay then data.ui_index = ui_index end
 end
 
 function key(n,z)
@@ -1529,7 +1594,13 @@ function key(n,z)
       data.ui_index = 1 
     end
   elseif n == 2 and z == 1 then
-    if view.patterns then
+    local slot = data.ui_index >= 14 and data.ui_index - 13 or data.ui_index - 7
+    if nb_overlay then
+      nb_overlay = false
+    elseif data.selected[1] > 7 and not view.patterns and not view.sampling and slot >= 1 and slot <= 6
+      and redraw_params[1].device == NB_DEVICE and nb then
+      nb_overlay = slot
+    elseif view.patterns then
       set_view(view.notes_input and (data.selected[1] < 8 and 'steps_engine' or 'steps_midi'))
     elseif browser.open then
       
@@ -1610,8 +1681,16 @@ function redraw(stage)
       --@chailight can't recall why this needed to change
       --ui.midi_screen(redraw_params[1], data.ui_index, data[data.pattern].track, data[data.pattern])
       ui.midi_screen(data.selected[1],redraw_params[1], data.ui_index, data[data.pattern].track, data[data.pattern])
+      if nb_overlay and redraw_params[1].device ~= NB_DEVICE then nb_overlay = false end
+      if nb_overlay then
+        local list = nb_track_params(tr)
+        local target = list and list[redraw_params[1]['cc_' .. nb_overlay]]
+        ui.nb_overlay(nb_overlay, target and target.name or "--",
+          target and nb_value_string(target.id, redraw_params[1]['cc_' .. nb_overlay .. '_val']) or "--")
+      end
     end
   end
+  if nb_overlay and (data.selected[1] < 8 or view.sampling or view.patterns) then nb_overlay = false end
   screen.update()
 end
 
