@@ -13,7 +13,7 @@ local name_lookup = {
 }
 local midi_name_lookup = { 
   [1] = 'note', [2] = 'velocity', [3] = 'length', [4] = 'channel', [5] = 'device', [6] = 'program_change', 
-  [7] = 'cc_1_val', [8] = 'cc_2_val', [9] = 'cc_3_val', [10] = 'cc_3_val', [11] = 'cc_4_val', [12] = 'cc_4_val'
+  [7] = 'cc_1_val', [8] = 'cc_2_val', [9] = 'cc_3_val', [10] = 'cc_4_val', [11] = 'cc_5_val', [12] = 'cc_6_val'
 }
 
 --@chailight chord name display
