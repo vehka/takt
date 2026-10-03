@@ -24,6 +24,7 @@ local textentry = require('textentry')
 local midi_out_devices = {}
 local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow devices
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
+local nb_voice_params = {} -- [voice name] = list of { id, label }: the params a track's CC slots can set
 -- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
 local null_device = {
   note_on = function() end, note_off = function() end,
@@ -388,7 +389,34 @@ local function out_device(tr, device)
   return midi_out_devices[device] or null_device
 end
 
--- nb voices take velocity as 0-1 and have no channels, CCs or program changes
+-- the voice params the CC slots of an nb track can point at, or nil
+local function nb_track_params(tr)
+  return nb_voice_params[params:get("takt_nb_voice_" .. tr .. "_hidden_string")]
+end
+
+local function nb_param_label(name)
+  local first, second = name:match("^(%S+)%s*(%S*)")
+  if not first then return "--" end
+  local label = second ~= "" and (first:sub(1, 2) .. second:sub(1, 2)) or first:sub(1, 4)
+  return label:upper()
+end
+
+-- set a voice param from a 0-127 value, only when that changes it (param actions can be costly)
+local function nb_set_param(id, val)
+  local p = params:lookup_param(id)
+  local x = util.clamp(val, 0, 127) / 127
+  if p.t == params.tCONTROL or p.t == params.tTAPER then
+    if params:get_raw(id) ~= x then params:set_raw(id, x) end
+  else
+    local lo, hi = 1, p.count
+    if p.t == params.tNUMBER then lo, hi = p.min, p.max end
+    local v = util.round(util.linlin(0, 1, lo, hi, x))
+    if params:get(id) ~= v then params:set(id, v) end
+  end
+end
+
+-- nb voices take velocity as 0-1 and have no channels or program changes;
+-- a CC number is the index of one of the voice's params
 local function make_nb_out(tr)
   local voice = params:lookup_param("takt_nb_voice_" .. tr)
   local sounding = {} -- [note] = player it was started on, so a voice change can't hang it
@@ -405,7 +433,35 @@ local function make_nb_out(tr)
       sounding[note] = nil
     end
   end
+  function out:cc(cc, val)
+    local list = nb_track_params(tr)
+    if list and list[cc] then nb_set_param(list[cc].id, val) end
+  end
   return out
+end
+
+-- like nb:add_player_params(), and notes which params each voice added
+local function nb_add_player_params()
+  local settable = { [params.tNUMBER] = true, [params.tOPTION] = true, [params.tCONTROL] = true, [params.tTAPER] = true }
+  local originals = {}
+  for name, player in pairs(nb.players) do
+    local add = rawget(player, "add_params")
+    if add then
+      originals[player] = add
+      player.add_params = function(self)
+        local first = params.count + 1
+        add(self)
+        local list = {}
+        for i = first, params.count do
+          local p = params.params[i]
+          if settable[p.t] then list[#list + 1] = { id = p.id, label = nb_param_label(p.name) } end
+        end
+        nb_voice_params[name] = list
+      end
+    end
+  end
+  nb:add_player_params()
+  for player, add in pairs(originals) do player.add_params = add end
 end
 
 local function nb_add_params()
@@ -416,8 +472,12 @@ local function nb_add_params()
     nb:add_param("takt_nb_voice_" .. tr, "track " .. tr .. " voice")
     nb_out[tr] = make_nb_out(tr)
   end
-  nb:add_player_params()
+  nb_add_player_params()
   ui.nb_enabled = true
+  ui.nb_label = function(tr, cc)
+    local list = nb_track_params(tr)
+    return list and list[cc] and list[cc].label or "--"
+  end
 end
 
 -- devices the DEV tile can show by name; the encoder skips the others
@@ -928,6 +988,15 @@ end,
 end,
 }
 
+-- highest CC number a step can use: 127, or the number of voice params on an nb track
+local function cc_max(tr, s)
+  if data[data.pattern][tr].params[s].device == NB_DEVICE then
+    local list = nb and nb_track_params(tr)
+    if list and #list > 0 then return #list end
+  end
+  return 127
+end
+
 --@chailight - inserted additional function to support chord selection
 local midi_step_params = {
 
@@ -1015,22 +1084,22 @@ local midi_step_params = {
   end,
   
   [14] = function(tr, s, d) -- 
-      data[data.pattern][tr].params[s].cc_1 = util.clamp(data[data.pattern][tr].params[s].cc_1 + d, 1, 127)
+      data[data.pattern][tr].params[s].cc_1 = util.clamp(data[data.pattern][tr].params[s].cc_1 + d, 1, cc_max(tr, s))
   end,
   [15] = function(tr, s, d) -- 
-      data[data.pattern][tr].params[s].cc_2 = util.clamp(data[data.pattern][tr].params[s].cc_2 + d, 1, 127)
+      data[data.pattern][tr].params[s].cc_2 = util.clamp(data[data.pattern][tr].params[s].cc_2 + d, 1, cc_max(tr, s))
   end,
   [16] = function(tr, s, d) -- 
-      data[data.pattern][tr].params[s].cc_3 = util.clamp(data[data.pattern][tr].params[s].cc_3 + d, 1, 127)
+      data[data.pattern][tr].params[s].cc_3 = util.clamp(data[data.pattern][tr].params[s].cc_3 + d, 1, cc_max(tr, s))
   end,
   [17] = function(tr, s, d) -- 
-      data[data.pattern][tr].params[s].cc_4 = util.clamp(data[data.pattern][tr].params[s].cc_4 + d, 1, 127)
+      data[data.pattern][tr].params[s].cc_4 = util.clamp(data[data.pattern][tr].params[s].cc_4 + d, 1, cc_max(tr, s))
   end,
   [18] = function(tr, s, d) -- 
-      data[data.pattern][tr].params[s].cc_5 = util.clamp(data[data.pattern][tr].params[s].cc_5 + d, 1, 127)
+      data[data.pattern][tr].params[s].cc_5 = util.clamp(data[data.pattern][tr].params[s].cc_5 + d, 1, cc_max(tr, s))
   end,
   [19] = function(tr, s, d) -- 
-      data[data.pattern][tr].params[s].cc_6 = util.clamp(data[data.pattern][tr].params[s].cc_6 + d, 1, 127)
+      data[data.pattern][tr].params[s].cc_6 = util.clamp(data[data.pattern][tr].params[s].cc_6 + d, 1, cc_max(tr, s))
   end,
 
 }

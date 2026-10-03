@@ -792,6 +792,12 @@ end
 
 --@chailight need to pass in the track because different tracks need to display parameters per device
 function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
+   -- on an nb track a CC slot is named after the voice param it sets
+   local nb_on = ui.nb_enabled and params_data.device == 11
+   local function cc_name(i)
+     local cc = params_data['cc_' .. i]
+     return nb_on and ui.nb_label(tr, cc) or 'CC' .. cc
+   end
    local tile = {
       {1, 'NOTE', function(i, _, lock) ui.draw_note(1, 8, params_data,i, ui_index, lock) end },
       {2, 'VEL',  params_data.velocity },
@@ -799,12 +805,12 @@ function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
       {4, 'CH',   params_data.channel },
       {5, 'DEV',  params_data.device },
       {6, 'PGM',  params_data.program_change },
-      {7, 'CC' .. params_data.cc_1, params_data.cc_1_val },
-      {8, 'CC' .. params_data.cc_2, params_data.cc_2_val },
-      {9, 'CC' .. params_data.cc_3, params_data.cc_3_val },
-      {10,'CC' .. params_data.cc_4, params_data.cc_4_val },
-      {11,'CC' .. params_data.cc_5, params_data.cc_5_val },
-      {12,'CC' .. params_data.cc_6, params_data.cc_6_val },
+      {7, cc_name(1), params_data.cc_1_val },
+      {8, cc_name(2), params_data.cc_2_val },
+      {9, cc_name(3), params_data.cc_3_val },
+      {10,cc_name(4), params_data.cc_4_val },
+      {11,cc_name(5), params_data.cc_5_val },
+      {12,cc_name(6), params_data.cc_6_val },
     }
     
     local wsyn_on = false 
