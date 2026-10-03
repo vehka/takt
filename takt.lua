@@ -28,6 +28,7 @@ local function find_nb()
 end
 local nb_path = find_nb()
 local nb = nb_path and include(nb_path) or nil
+local nb_defaults = include('lib/nb_defaults')
 local music = require 'musicutil'
 local fileselect = require('fileselect')
 local textentry = require('textentry')
@@ -35,8 +36,14 @@ local textentry = require('textentry')
 local midi_out_devices = {}
 local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow devices
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
-local nb_voice_params = {} -- [voice name] = list of { id, label, name }: the params a track's CC slots can set
+local nb_voice_params = {} -- [voice name] = list of { id, key, index, label, name }: the params a track's CC slots can set
+local nb_param_key = {} -- [param id] = its key, which is the same in every instance of a voice
 local nb_overlay = false -- CC slot (1-6) shown in the nb param overlay, opened with K2
+local nb_overlay_step = false -- the overlay was opened by holding a step; it shows once the press is a hold, not a tap
+local nb_locked = {} -- [track] = { [param id] = { base, sent, raw, gen } }: voice params a step lock is overriding
+local nb_ask -- { tr, variant }: the track's voice changed model and its slots hold data; K2/K3 answer
+local nb_ask_key -- the key that answered, until it is released
+local nb_gen = 0 -- counts set_cc() calls, to tell which locks the current step renewed
 local nb_pending -- param picked with E2 in the overlay; it takes effect on E3 or when K2 closes it
 local nb_clear_hold -- clock that clears the slot's locks while K3 is held in the overlay
 local nb_cleared = 0 -- time of the last clear, for the overlay's confirmation
@@ -413,6 +420,112 @@ local function nb_param_label(name)
   return label:upper()
 end
 
+-- the part of each id that tells a voice's params apart: the id without the
+-- prefix and suffix that all of the voice's ids share, cut at underscores
+local function nb_param_keys(ids)
+  local pre, suf = ids[1] or "", ids[1] or ""
+  for _, id in ipairs(ids) do
+    while id:sub(1, #pre) ~= pre do pre = pre:sub(1, -2) end
+    while #suf > 0 and id:sub(-#suf) ~= suf do suf = suf:sub(2) end
+  end
+  pre = #ids > 1 and pre:match("^.*_") or ""
+  suf = #ids > 1 and suf:match("^[^_]*(_.*)$") or ""
+  local keys = {}
+  for i, id in ipairs(ids) do
+    local key = id:sub(#pre + 1, #id - #suf)
+    keys[i] = key ~= "" and key or id
+  end
+  return keys
+end
+
+-- the list of a voice's params that the CC slots can set, from its settable
+-- params in menu order. A later param with the same name as an earlier one
+-- (emplaitress has two decays) gets its key added to tell them apart
+local function nb_param_list(voice, found)
+  local known
+  for _, v in ipairs(nb_defaults) do
+    if voice:find(v.match) then known = v break end
+  end
+  local ids = {}
+  for i, p in ipairs(found) do ids[i] = p.id end
+  local keys = nb_param_keys(ids)
+  local list = { by_id = {}, by_key = {}, known = known }
+  local seen = {}
+  for i, p in ipairs(found) do
+    local key = keys[i]
+    nb_param_key[p.id] = key
+    if not (known and known.skip and tab.contains(known.skip, key)) then
+      local n = (seen[p.name] or 0) + 1
+      seen[p.name] = n
+      local label = nb_param_label(p.name)
+      local e = {
+        id = p.id, key = key, index = #list + 1,
+        name = n > 1 and p.name .. " (" .. key .. ")" or p.name,
+        label = n > 1 and label:sub(1, 3) .. n or label,
+      }
+      list[e.index], list.by_id[e.id], list.by_key[key] = e, e, e
+    end
+  end
+  return list
+end
+
+-- the params a voice's unset slots point at: the ones listed in nb_defaults
+-- (for the variant, such as an emplaitress model, when it has its own), then
+-- the first continuous params, then any others; params hidden in the menu come
+-- last. Worked out on first use and kept, so they don't move under a pattern
+local function nb_default_slots(list, variant)
+  local known = list.known
+  local keys = known and (known.variants and known.variants[variant] or known.slots)
+  variant = known and known.variants and known.variants[variant] and variant or ""
+  list.defaults = list.defaults or {}
+  if list.defaults[variant] then return list.defaults[variant] end
+  local slots, used = {}, {}
+  local function take(e)
+    if e and not used[e] and #slots < 6 then
+      used[e] = true
+      slots[#slots + 1] = e
+    end
+  end
+  if keys then
+    for _, key in ipairs(keys) do take(list.by_key[key]) end
+  end
+  for pass = 1, 3 do -- visible continuous, visible, any
+    for _, e in ipairs(list) do
+      local t = params:lookup_param(e.id).t
+      if pass == 3 or (params:visible(e.id) and (pass == 2 or t == params.tCONTROL or t == params.tTAPER)) then
+        take(e)
+      end
+    end
+  end
+  list.defaults[variant] = slots
+  return slots
+end
+
+-- the voice param that CC slot i of a step (or of the track) points at, or nil.
+-- nb_<i> holds the param's id; an unset slot points at the i-th default of the
+-- voice, for the variant the track's slots were last set up for (nb_set).
+-- An id from another instance of the same voice finds its param by key
+local function nb_slot(tr, p, i)
+  local list = nb_track_params(tr)
+  if not list then return nil end
+  local id = p['nb_' .. i]
+  if id == nil then return nb_default_slots(list, p.nb_set)[i] end
+  return list.by_id[id] or list.by_key[nb_param_key[id]]
+end
+
+-- the param d places from list[index] in the overlay's list, skipping params
+-- that are hidden in the menu (they do nothing in the voice's current mode)
+local function nb_scroll(list, index, d)
+  local dir = d > 0 and 1 or -1
+  for _ = 1, math.abs(d) do
+    local nxt = index + dir
+    while list[nxt] and not params:visible(list[nxt].id) do nxt = nxt + dir end
+    if not list[nxt] then break end
+    index = nxt
+  end
+  return index
+end
+
 -- what a 0-127 slot value means for a voice param: a raw 0-1 value for
 -- continuous params (second result true), else one of the number/option values
 local function nb_map(p, val)
@@ -434,12 +547,57 @@ local function nb_set_param(id, val)
 end
 
 -- a voice param's current value on the 0-127 scale of a slot
+-- (while a step lock overrides the param, that is the value it goes back to)
 local function nb_current(id)
   local p = params:lookup_param(id)
-  if p.t == params.tCONTROL or p.t == params.tTAPER then return util.round(params:get_raw(id) * 127) end
+  local base
+  for _, locked in pairs(nb_locked) do
+    if locked[id] then base = locked[id].base end
+  end
+  if p.t == params.tCONTROL or p.t == params.tTAPER then return util.round((base or params:get_raw(id)) * 127) end
   local lo, hi = 1, p.count
   if p.t == params.tNUMBER then lo, hi = p.min, p.max end
-  return hi > lo and util.round(util.linlin(lo, hi, 0, 127, params:get(id))) or 0
+  return hi > lo and util.round(util.linlin(lo, hi, 0, 127, base or params:get(id))) or 0
+end
+
+-- a step lock sets a voice param for that step only: remember the value it had,
+-- for nb_unlock() to put back. A value changed by hand since the last lock is
+-- the one to go back to
+local function nb_lock_param(tr, id, val)
+  local locked = nb_locked[tr]
+  if not locked then
+    locked = {}
+    nb_locked[tr] = locked
+  end
+  local v, raw = nb_map(params:lookup_param(id), val)
+  local cur = raw and params:get_raw(id) or params:get(id)
+  local e = locked[id]
+  if not e then
+    e = { base = cur, raw = raw }
+    locked[id] = e
+  elseif cur ~= e.sent then
+    e.base = cur
+  end
+  e.sent, e.gen = v, nb_gen
+  if cur ~= v then
+    if raw then params:set_raw(id, v) else params:set(id, v) end
+  end
+end
+
+-- put back the voice params of a track whose locks the current step didn't
+-- renew (all = every one, for when the sequencer stops)
+local function nb_unlock(tr, all)
+  local locked = nb_locked[tr]
+  if not locked then return end
+  for id, e in pairs(locked) do
+    if all or e.gen ~= nb_gen then
+      local cur = e.raw and params:get_raw(id) or params:get(id)
+      if cur == e.sent then
+        if e.raw then params:set_raw(id, e.base) else params:set(id, e.base) end
+      end
+      locked[id] = nil
+    end
+  end
 end
 
 -- the value a slot sets, as text; an unset slot (-1) shows the param's current value.
@@ -474,7 +632,7 @@ local function nb_step_value(id, val, d)
 end
 
 -- nb voices take velocity as 0-1 and have no channels or program changes;
--- a CC number is the index of one of the voice's params
+-- their CC slots set voice params instead, see set_cc()
 local function make_nb_out(tr)
   local voice = params:lookup_param("takt_nb_voice_" .. tr)
   local sounding = {} -- [note] = player it was started on, so a voice change can't hang it
@@ -491,10 +649,6 @@ local function make_nb_out(tr)
       sounding[note] = nil
     end
   end
-  function out:cc(cc, val)
-    local list = nb_track_params(tr)
-    if list and list[cc] then nb_set_param(list[cc].id, val) end
-  end
   return out
 end
 
@@ -509,12 +663,12 @@ local function nb_add_player_params()
       player.add_params = function(self)
         local first = params.count + 1
         add(self)
-        local list = {}
+        local found = {}
         for i = first, params.count do
           local p = params.params[i]
-          if settable[p.t] then list[#list + 1] = { id = p.id, label = nb_param_label(p.name), name = p.name } end
+          if settable[p.t] then found[#found + 1] = p end
         end
-        nb_voice_params[name] = list
+        nb_voice_params[name] = nb_param_list(name, found)
       end
     end
   end
@@ -532,13 +686,13 @@ local function nb_add_params()
   end
   nb_add_player_params()
   ui.nb_enabled = true
-  ui.nb_label = function(tr, cc)
-    local list = nb_track_params(tr)
-    return list and list[cc] and list[cc].label or "--"
+  ui.nb_label = function(tr, p, i)
+    local target = nb_slot(tr, p, i)
+    return target and target.label or "--"
   end
-  ui.nb_value = function(tr, cc, val)
-    local list = nb_track_params(tr)
-    return list and list[cc] and nb_value_string(list[cc].id, val, true)
+  ui.nb_value = function(tr, p, i, val)
+    local target = nb_slot(tr, p, i)
+    return target and nb_value_string(target.id, val, true)
   end
 end
 
@@ -565,22 +719,39 @@ local function next_device(device, d)
 end
 
 local function set_cc(tr, step_param)
+  local nb_track = step_param.device == NB_DEVICE and nb ~= nil
+  nb_gen = nb_gen + 1
   for i = 1, 6 do
     local cc = step_param['cc_' .. i] 
     local val = step_param['cc_' .. i .. '_val'] 
+    -- on an nb track a value of the step's own is a lock; the track's value isn't
+    -- (a step without locks is played from the track's table, which has no metatable)
+    local lock = nb_track and getmetatable(step_param) ~= nil and rawget(step_param, 'cc_' .. i .. '_val') ~= nil
     -- @chailight: add support for midi CCs to be additional LFO targets
     for j = 1, 4 do
         local target = params:get(j .. "lfo_target")
         --print ("state", j, params:get(j .. "lfo"))
         if  tonumber(target) - 1 - ((tr - 8) * 6) == i and params:get(j .. "lfo") == 2 then
             val = math.floor(math.abs(lfo.scale(lfo[j].slope, -1, 1, 1, 127)))
+            lock = false
             --print("target", target - 1 - ((tr - 8) * 6), val)
         end
     end
-    if val > -1 then
+    if val > -1 and step_param.device == NB_DEVICE then
+      local target = nb_track and nb_slot(tr, step_param, i)
+      if target and lock then
+        nb_lock_param(tr, target.id, val)
+      elseif target then
+        -- the track's own value replaces whatever a lock would have gone back to
+        if nb_locked[tr] then nb_locked[tr][target.id] = nil end
+        nb_set_param(target.id, val)
+      end
+    elseif val > -1 then
       out_device(tr, step_param.device):cc(cc, val, step_param.channel)
     end
   end
+  -- a step without a lock plays with the params as they were before the locks
+  if nb_track then nb_unlock(tr) end
 end
 
 local function move_params(tr, src, dst )
@@ -1048,21 +1219,16 @@ end,
 end,
 }
 
--- highest CC number a step can use: 127, or the number of voice params on an nb track
-local function cc_max(tr, s)
-  if data[data.pattern][tr].params[s].device == NB_DEVICE then
-    local list = nb and nb_track_params(tr)
-    if list and #list > 0 then return #list end
-  end
-  return 127
-end
-
 -- turn CC slot i's value on an nb track; false when the step isn't an nb one
 local function nb_cc_val(tr, s, i, d)
   local p = data[data.pattern][tr].params[s]
   if p.device ~= NB_DEVICE then return false end
-  local list = nb and nb_track_params(tr)
-  local target = list and list[p['cc_' .. i]]
+  local target = nb and nb_slot(tr, p, i)
+  -- a slot that gets a value keeps the param it points at now, whatever the
+  -- voice's defaults are later
+  if target and p['nb_' .. i] == nil then
+    data[data.pattern][tr].params[tostring(tr)]['nb_' .. i] = target.id
+  end
   p['cc_' .. i .. '_val'] = target and nb_step_value(target.id, p['cc_' .. i .. '_val'], d)
     or util.clamp(p['cc_' .. i .. '_val'] + d, -1, 127)
   return true
@@ -1075,12 +1241,14 @@ local function cc_locks(tr, i, clear)
   local steps = data[data.pattern][tr].params
   for pos = 0, 256 do
     local step = steps[pos]
-    if rawget(step, 'cc_' .. i .. '_val') ~= nil or rawget(step, 'cc_' .. i) ~= nil then
+    if rawget(step, 'cc_' .. i .. '_val') ~= nil or rawget(step, 'cc_' .. i) ~= nil
+      or rawget(step, 'nb_' .. i) ~= nil then
       local main = (pos - 1) // 16
       if main ~= last then n, last = n + 1, main end
       if clear then
         step['cc_' .. i .. '_val'] = nil
         step['cc_' .. i] = nil
+        step['nb_' .. i] = nil
       end
     end
   end
@@ -1092,6 +1260,7 @@ end
 local function nb_pick(tr, s, i)
   if data[data.pattern][tr].params[s].device ~= NB_DEVICE or not nb then return false end
   nb_overlay, nb_pending = i, nil
+  nb_overlay_step = false
   return true
 end
 
@@ -1102,20 +1271,97 @@ local function nb_commit()
   nb_pending = nil
   if not pending or not i then return end
   local tr = data.selected[1]
+  local list = nb_track_params(tr)
+  local target = list and list[pending]
+  if not target then return end
   local steps = data[data.pattern][tr].params
   local sel = is_lock()
   if type(sel) == 'string' then
-    if steps[sel]['cc_' .. i] == pending then return end
+    if nb_slot(tr, steps[sel], i) == target then return end
     cc_locks(tr, i, true)
-    steps[sel]['cc_' .. i] = pending
+    steps[sel]['nb_' .. i] = target.id
     steps[sel]['cc_' .. i .. '_val'] = -1
   else
     local first = get_step(sel)
-    if steps[first]['cc_' .. i] == pending then return end
+    if nb_slot(tr, steps[first], i) == target then return end
     for pos = first, first + 15 do
-      steps[pos]['cc_' .. i] = pending
+      steps[pos]['nb_' .. i] = target.id
       steps[pos]['cc_' .. i .. '_val'] = -1
     end
+  end
+end
+
+-- the variant of a track's voice (an emplaitress model) that has default slots
+-- of its own, or nil. A model set by a step lock doesn't count: it is the
+-- value the param goes back to
+local function nb_variant(tr)
+  local list = nb_track_params(tr)
+  local known = list and list.known
+  local e = known and known.variant and list.by_key[known.variant]
+  if not e then return nil end
+  local value = params:get(e.id)
+  if nb_locked[tr] and nb_locked[tr][e.id] then value = nb_locked[tr][e.id].base end
+  local name = params:lookup_param(e.id).options[value]
+  return known.variants[name] and name or nil
+end
+
+-- give a track's six slots back to the defaults: no picked params, values or locks
+local function nb_reset_slots(tr)
+  local track = data[data.pattern][tr].params[tostring(tr)]
+  for i = 1, 6 do
+    cc_locks(tr, i, true)
+    track['nb_' .. i] = nil
+    track['cc_' .. i .. '_val'] = -1
+  end
+end
+
+-- answer the question nb_follow_variant() asked: use the new model's slots, or keep the old
+local function nb_answer(use)
+  local track = data[data.pattern][nb_ask.tr].params[tostring(nb_ask.tr)]
+  if use then
+    nb_reset_slots(nb_ask.tr)
+    track.nb_set = nb_ask.variant
+  else
+    track.nb_asked = nb_ask.variant
+  end
+  nb_ask = nil
+end
+
+-- when the voice of the selected track changes model, its unset slots follow
+-- the new model's defaults. Slots that hold values, picked params or locks
+-- are reset too on a track without trigs; on one with trigs the user is asked
+local function nb_follow_variant(tr)
+  local track = data[data.pattern][tr].params[tostring(tr)]
+  local variant = track.device == NB_DEVICE and nb_variant(tr) or nil
+  if not variant or variant == track.nb_set then
+    track.nb_asked, nb_ask = nil, nil
+    return
+  end
+  if track.nb_asked == variant or (nb_ask and nb_ask.tr == tr and nb_ask.variant == variant) then return end
+  nb_ask = nil
+  -- models that share their defaults need no change
+  local variants = nb_track_params(tr).known.variants
+  if variants[track.nb_set] == variants[variant] then
+    track.nb_set = variant
+    return
+  end
+  local used = false
+  for i = 1, 6 do
+    if track['cc_' .. i .. '_val'] >= 0 or track['nb_' .. i] ~= nil or cc_locks(tr, i) > 0 then used = true end
+  end
+  local trigs = false
+  if used and track.nb_set then
+    local steps = data[data.pattern][tr]
+    for pos = 1, 256 do
+      if steps[pos] == 1 then trigs = true break end
+    end
+  end
+  if used and trigs then
+    nb_ask = { tr = tr, variant = variant }
+  else
+    -- a track that hasn't been set up for a model yet (nb_set is nil) keeps what it has
+    if used and track.nb_set then nb_reset_slots(tr) end
+    track.nb_set = variant
   end
 end
 
@@ -1213,27 +1459,27 @@ local midi_step_params = {
   
   [14] = function(tr, s, d) -- 
       if nb_pick(tr, s, 1) then return end
-      data[data.pattern][tr].params[s].cc_1 = util.clamp(data[data.pattern][tr].params[s].cc_1 + d, 1, cc_max(tr, s))
+      data[data.pattern][tr].params[s].cc_1 = util.clamp(data[data.pattern][tr].params[s].cc_1 + d, 1, 127)
   end,
   [15] = function(tr, s, d) -- 
       if nb_pick(tr, s, 2) then return end
-      data[data.pattern][tr].params[s].cc_2 = util.clamp(data[data.pattern][tr].params[s].cc_2 + d, 1, cc_max(tr, s))
+      data[data.pattern][tr].params[s].cc_2 = util.clamp(data[data.pattern][tr].params[s].cc_2 + d, 1, 127)
   end,
   [16] = function(tr, s, d) -- 
       if nb_pick(tr, s, 3) then return end
-      data[data.pattern][tr].params[s].cc_3 = util.clamp(data[data.pattern][tr].params[s].cc_3 + d, 1, cc_max(tr, s))
+      data[data.pattern][tr].params[s].cc_3 = util.clamp(data[data.pattern][tr].params[s].cc_3 + d, 1, 127)
   end,
   [17] = function(tr, s, d) -- 
       if nb_pick(tr, s, 4) then return end
-      data[data.pattern][tr].params[s].cc_4 = util.clamp(data[data.pattern][tr].params[s].cc_4 + d, 1, cc_max(tr, s))
+      data[data.pattern][tr].params[s].cc_4 = util.clamp(data[data.pattern][tr].params[s].cc_4 + d, 1, 127)
   end,
   [18] = function(tr, s, d) -- 
       if nb_pick(tr, s, 5) then return end
-      data[data.pattern][tr].params[s].cc_5 = util.clamp(data[data.pattern][tr].params[s].cc_5 + d, 1, cc_max(tr, s))
+      data[data.pattern][tr].params[s].cc_5 = util.clamp(data[data.pattern][tr].params[s].cc_5 + d, 1, 127)
   end,
   [19] = function(tr, s, d) -- 
       if nb_pick(tr, s, 6) then return end
-      data[data.pattern][tr].params[s].cc_6 = util.clamp(data[data.pattern][tr].params[s].cc_6 + d, 1, cc_max(tr, s))
+      data[data.pattern][tr].params[s].cc_6 = util.clamp(data[data.pattern][tr].params[s].cc_6 + d, 1, 127)
   end,
 
 }
@@ -1570,6 +1816,7 @@ function clock.transport.stop()
     if is_running then
         is_running = false 
         clock.cancel(sequencer_clock)
+        for tr = 8, 14 do nb_unlock(tr, true) end
         print("transport: stop")
     else 
         print("transport: already stopped")
@@ -1592,7 +1839,8 @@ function enc(n,d)
   if nb_overlay and n == 2 and not browser.open then
     local list = nb_track_params(tr)
     if list and #list > 0 then
-      nb_pending = util.clamp((nb_pending or redraw_params[1]['cc_' .. nb_overlay]) + d, 1, #list)
+      local current = nb_slot(tr, redraw_params[1], nb_overlay)
+      nb_pending = nb_scroll(list, nb_pending or current and current.index or 1, d)
     end
     return
   elseif nb_overlay and n == 3 and not browser.open then
@@ -1671,6 +1919,11 @@ function key(n,z)
   if browser.open then
     browser.key(n, z)
 
+  elseif (nb_ask and n > 1) or nb_ask_key == n then
+    -- K2: use the new model's slots, K3: keep the old ones
+    nb_ask_key = z == 1 and nb_ask and n or nil
+    if nb_ask_key then nb_answer(n == 2) end
+
   elseif nb_overlay and n == 3 then
     -- hold K3: clear this slot's locks on every step of the track
     if nb_clear_hold then clock.cancel(nb_clear_hold) end
@@ -1699,6 +1952,7 @@ function key(n,z)
     elseif data.selected[1] > 7 and not view.patterns and not view.sampling and slot >= 1 and slot <= 6
       and redraw_params[1].device == NB_DEVICE and nb then
       nb_overlay, nb_pending = slot, nil
+      nb_overlay_step = false
     elseif view.patterns then
       set_view(view.notes_input and (data.selected[1] < 8 and 'steps_engine' or 'steps_midi'))
     elseif browser.open then
@@ -1781,11 +2035,14 @@ function redraw(stage)
       --ui.midi_screen(redraw_params[1], data.ui_index, data[data.pattern].track, data[data.pattern])
       ui.midi_screen(data.selected[1],redraw_params[1], data.ui_index, data[data.pattern].track, data[data.pattern])
       if nb_overlay and redraw_params[1].device ~= NB_DEVICE then nb_overlay = false end
-      if nb_overlay then
+      if nb then nb_follow_variant(tr) end
+      if nb_ask then nb_overlay = false end
+      -- an overlay opened by a step press waits until the press is a hold
+      if nb_overlay and not (nb_overlay_step and data.selected[2] and util.time() - down_time < 0.2) then
         local list = nb_track_params(tr)
-        local cc = redraw_params[1]['cc_' .. nb_overlay]
-        local picking = nb_pending and nb_pending ~= cc
-        local target = list and list[nb_pending or cc]
+        local current = nb_slot(tr, redraw_params[1], nb_overlay)
+        local target = nb_pending and list and list[nb_pending] or current
+        local picking = nb_pending and target ~= current
         local val = picking and -1 or redraw_params[1]['cc_' .. nb_overlay .. '_val']
         local locks = cc_locks(tr, nb_overlay)
         local lock_text = locks .. (locks == 1 and " lock" or " locks")
@@ -1795,8 +2052,10 @@ function redraw(stage)
         ui.nb_overlay(nb_overlay, target and target.name or "--",
           target and nb_value_string(target.id, val) or "--", val >= 0, note)
       end
+      if nb_ask then ui.nb_confirm(nb_ask.variant) end
     end
   end
+  if nb_ask and (nb_ask.tr ~= data.selected[1] or view.sampling or view.patterns) then nb_ask = nil end
   if nb_overlay and (data.selected[1] < 8 or view.sampling or view.patterns) then nb_overlay = false end
   screen.update()
 end
@@ -1894,8 +2153,20 @@ function g.key(x, y, z)
           copy_step(copy, {y, x})
         end
       elseif not view.notes_input then
-        cond = have_substeps(y, x) 
+        cond = have_substeps(y, x)
+        -- the nb overlay follows the held step: a param picked in it is committed
+        -- for what was selected until now, and releasing the step closes it
+        if nb_overlay then
+          nb_commit()
+          if z == 0 then nb_overlay = false end
+        end
         data.selected = { y, z == 1 and x or false }
+        -- holding a step with a CC slot selected shows the slot's lock in the overlay
+        local slot = data.ui_index >= 14 and data.ui_index - 13 or data.ui_index - 7
+        if z == 1 and nb and y > 7 and (nb_overlay or slot >= 1 and slot <= 6)
+          and data[data.pattern][y].params[get_step(x)].device == NB_DEVICE then
+          nb_overlay, nb_pending, nb_overlay_step = nb_overlay or slot, nil, true
+        end
         if not data.selected[2] then tr_change(y) end
         if not data.selected[2] and data.ui_index < 1 then data.ui_index = 1 end
        if z == 1 then

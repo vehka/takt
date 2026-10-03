@@ -459,14 +459,35 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 
 **Voice parameters on the CC slots**: on an nb track the six CC tiles set parameters of the voice instead of sending MIDI CCs.
 
-- The tile's label is the parameter it points at (for example `TIMB`, `MORP`). The list is the voice's own parameters, in PARAMS menu order.
-- The tile's value (0-127) is scaled to the parameter's range. Parameters with a list of choices (such as emplaitress `style`) show the choice and move one choice per encoder click.
+*What the tiles show*
+
+- The tile's label is the parameter it points at (for example `TIMB`, `MORP`). When a voice has two parameters with the same name, the later one gets a number (`DEC2`).
+- The tile's value (0-127) is scaled to the parameter's range. Parameters with a list of choices (such as emplaitress `model`) show the choice and move one choice per encoder click.
 - A slot that has not been set leaves the parameter alone and shows the parameter's current value; turning the encoder starts from there. Turn below the lowest value to unset a slot again.
+- A slot's value is sent when the track plays a step, like a CC, so a change is heard from the next trig on.
+
+*Default parameters*
+
+- Until you choose others, the six slots point at a default set for the voice. Emplaitress, nb_polyperc, doubledecker and nb_fluid have their own sets (listed in `lib/nb_defaults.lua`); other voices get their first continuous parameters.
+- Emplaitress has a set per model. Slots 1-4 are always model, harmonics, timbre and morph. Slots 5-6 are decay and lpg color, except on the models that have their own envelope and ignore those two (string, modal, kick, snare, hat), where they are aux mix and fm env.
+- When you change the voice's model to one with a different set, a track without trigs gets the new set. If the track has trigs and its slots hold values, chosen parameters or locks, a window asks first: **K2** takes the new model's parameters and clears the slots' values and locks, **K3** keeps the old ones. The check is made for the selected track while its screen is showing. A model set by a step lock doesn't count as a change.
+
+*The parameter window*
+
 - **K2** on a CC tile opens a window with the parameter's full name and the value it will be set to (marked `not set` while the slot only shows the current value). There **E2** chooses the parameter and **E3** the value; **K2** closes it. Turning E3 on a tile's name (ui_index 14-19) opens the same window.
+- E2 goes through the voice's own parameters in PARAMS menu order. Parameters that are hidden in the PARAMS menu, because they do nothing in the voice's current mode, are skipped.
 - A parameter chosen with E2 only takes effect when you turn E3 or close the window, so scrolling through the list changes nothing. Because the slot's value was meant for the old parameter, choosing a new one unsets the value, and at track level also drops the slot's step locks (the window says how many). Scroll back to the old parameter before closing to keep everything.
 - In the window, the line beside the parameter name counts the steps that lock this slot. **Hold K3** to clear them all: every step of the track then follows the track's own setting for the slot again. Locks on other slots and the track's setting are kept.
-- Values can be parameter-locked per step and used as LFO targets, like CCs. As with a CC, the parameter keeps the last value sent until another step changes it.
-- The slots point at parameters by position in the voice's list, so check them after changing a track to a different voice.
+
+*Step locks and LFOs*
+
+- Values can be parameter-locked per step and used as LFO targets, like CCs. Hold a step with a CC tile selected and the window opens for that step's lock; turn E3 to set it. Releasing the step closes the window, also one that was opened with K2.
+- A step lock lasts for its step: the next step without a lock, and stopping the sequencer, put the parameter back to what it was (or to the track's own value for the slot, if it has one). If you change the parameter yourself in PARAMS while a lock holds it, your value is kept.
+
+*Saving and changing voices*
+
+- A slot remembers the parameter you chose or gave a value, so a saved project keeps working when a voice gains parameters in an update.
+- Changing a track to another instance of the same voice (emplait 1 to emplait 2) keeps the slots. On a different kind of voice such a slot shows `--` and does nothing until you choose a parameter for it; slots you never touched follow the new voice's defaults.
 
 ### MIDI Recording
 
