@@ -1060,14 +1060,16 @@ local function nb_cc_val(tr, s, i, d)
   return true
 end
 
--- steps of a track that lock CC slot i (its value or the param it points at)
+-- steps of a track that lock CC slot i (its value or the param it points at).
+-- A lock made on a step is stored on each of its 16 substeps; it counts once
 local function cc_locks(tr, i, clear)
-  local n = 0
+  local n, last = 0, nil
   local steps = data[data.pattern][tr].params
   for pos = 0, 256 do
     local step = steps[pos]
     if rawget(step, 'cc_' .. i .. '_val') ~= nil or rawget(step, 'cc_' .. i) ~= nil then
-      n = n + 1
+      local main = (pos - 1) // 16
+      if main ~= last then n, last = n + 1, main end
       if clear then
         step['cc_' .. i .. '_val'] = nil
         step['cc_' .. i] = nil
