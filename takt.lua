@@ -26,6 +26,8 @@ local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
 local nb_voice_params = {} -- [voice name] = list of { id, label, name }: the params a track's CC slots can set
 local nb_overlay = false -- CC slot (1-6) shown in the nb param overlay, opened with K2
+local nb_clear_hold -- clock that clears the slot's locks while K3 is held in the overlay
+local nb_cleared = 0 -- time of the last clear, for the overlay's confirmation
 -- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
 local null_device = {
   note_on = function() end, note_off = function() end,
@@ -1059,6 +1061,23 @@ local function nb_cc_val(tr, s, i, d)
   return true
 end
 
+-- steps of a track that lock CC slot i (its value or the param it points at)
+local function cc_locks(tr, i, clear)
+  local n = 0
+  local steps = data[data.pattern][tr].params
+  for pos = 0, 256 do
+    local step = steps[pos]
+    if rawget(step, 'cc_' .. i .. '_val') ~= nil or rawget(step, 'cc_' .. i) ~= nil then
+      n = n + 1
+      if clear then
+        step['cc_' .. i .. '_val'] = nil
+        step['cc_' .. i] = nil
+      end
+    end
+  end
+  return n
+end
+
 --@chailight - inserted additional function to support chord selection
 local midi_step_params = {
 
@@ -1624,6 +1643,18 @@ function key(n,z)
   if browser.open then
     browser.key(n, z)
 
+  elseif nb_overlay and n == 3 then
+    -- hold K3: clear this slot's locks on every step of the track
+    if nb_clear_hold then clock.cancel(nb_clear_hold) end
+    nb_clear_hold = z == 1 and clock.run(function()
+      clock.sleep(0.6)
+      nb_clear_hold = nil
+      if nb_overlay then
+        cc_locks(data.selected[1], nb_overlay, true)
+        nb_cleared = util.time()
+      end
+    end) or nil
+
   elseif n == 1 then
     if K1_is_hold() and not view.sampling and not view.patterns then 
       data.ui_index = -4 
@@ -1725,8 +1756,11 @@ function redraw(stage)
         local list = nb_track_params(tr)
         local target = list and list[redraw_params[1]['cc_' .. nb_overlay]]
         local val = redraw_params[1]['cc_' .. nb_overlay .. '_val']
+        local locks = cc_locks(tr, nb_overlay)
+        local note = util.time() - nb_cleared < 1.5 and "locks cleared"
+          or locks > 0 and locks .. (locks == 1 and " lock" or " locks") .. ": hold K3"
         ui.nb_overlay(nb_overlay, target and target.name or "--",
-          target and nb_value_string(target.id, val) or "--", val >= 0)
+          target and nb_value_string(target.id, val) or "--", val >= 0, note)
       end
     end
   end

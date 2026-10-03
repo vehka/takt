@@ -463,6 +463,7 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 - The tile's value (0-127) is scaled to the parameter's range. Parameters with a list of choices (such as emplaitress `style`) show the choice and move one choice per encoder click.
 - A slot that has not been set leaves the parameter alone and shows the parameter's current value; turning the encoder starts from there. Turn below the lowest value to unset a slot again.
 - **K2** on a CC tile opens a window with the parameter's full name and the value it will be set to (marked `not set` while the slot only shows the current value). There **E2** chooses the parameter and **E3** the value; **K2** closes it. Without the window, the parameter is chosen the same way as a CC number (ui_index 14-19).
+- In the window, the line beside the parameter name counts the steps that lock this slot. **Hold K3** to clear them all: every step of the track then follows the track's own setting for the slot again. Locks on other slots and the track's setting are kept.
 - Values can be parameter-locked per step and used as LFO targets, like CCs. As with a CC, the parameter keeps the last value sent until another step changes it.
 - The slots point at parameters by position in the voice's list, so check them after changing a track to a different voice.
 

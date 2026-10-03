@@ -792,7 +792,8 @@ end
 
 -- window over the MIDI screen with a CC slot's nb voice param and value in full
 -- set: the slot sets the value shown; otherwise it is the param's current value
-function ui.nb_overlay(slot, name, value, set)
+-- note: a line about the slot's step locks, or nil
+function ui.nb_overlay(slot, name, value, set, note)
   screen.level(0)
   screen.rect(8, 12, 112, 40)
   screen.fill()
@@ -807,6 +808,11 @@ function ui.nb_overlay(slot, name, value, set)
   screen.level(15)
   screen.move(13, 34)
   screen.text(name)
+  if note then
+    screen.level(4)
+    screen.move(115, 34)
+    screen.text_right(note)
+  end
   screen.level(set and 15 or 5)
   screen.move(13, 45)
   screen.text(value)
