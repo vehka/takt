@@ -1,13 +1,10 @@
--- takt v2.3
--- @its_your_bedtime
---
+-- takt v3.0
 -- parameter locking sequencer
--- 
--- modifications by @chailight
--- support for global clock
--- support for just friends, w/syn and crow output
--- support for chord output
--- inclusion of additional LFOs
+--
+-- Original takt by
+-- @its_your_bedtime
+-- modifications by
+-- @chailight and @vehka
 
 local sampler = include('lib/sampler')
 local browser = include('lib/browser')
