@@ -41,7 +41,7 @@ local nb_locked = {} -- [track] = { [param id] = { base, sent, raw, gen } }: voi
 local nb_ask -- { tr, variant }: the track's voice changed model and its slots hold data; K2/K3 answer
 local nb_ask_key -- the key that answered, until it is released
 local nb_gen = 0 -- counts set_cc() calls, to tell which locks the current step renewed
-local nb_pending -- param picked with E2 in the overlay; it takes effect on E3 or when K2 closes it
+local nb_pending -- param picked with E2 in the overlay; it takes effect on E3, and for the track when K2 closes it
 local nb_clear_hold -- clock that clears the slot's locks while K3 is held in the overlay
 local nb_cleared = 0 -- time of the last clear, for the overlay's confirmation
 -- silent stand-in for an output that isn't there (unconnected device number, nb not installed)
@@ -1267,8 +1267,10 @@ local function nb_pick(tr, s, i)
 end
 
 -- make the param picked in the overlay the slot's param. The slot's value, and
--- at track level its step locks, were meant for the old param, so they are dropped
-local function nb_commit()
+-- at track level its step locks, were meant for the old param, so they are dropped.
+-- A step only takes the param together with a value (E3): without one the lock
+-- would do nothing, so a pick that is left at that is forgotten
+local function nb_commit(valued)
   local pending, i = nb_pending, nb_overlay
   nb_pending = nil
   if not pending or not i then return end
@@ -1283,7 +1285,7 @@ local function nb_commit()
     cc_locks(tr, i, true)
     steps[sel]['nb_' .. i] = target.id
     steps[sel]['cc_' .. i .. '_val'] = -1
-  else
+  elseif valued then
     local first = get_step(sel)
     if nb_slot(tr, steps[first], i) == target then return end
     for pos = first, first + 15 do
@@ -1871,7 +1873,7 @@ function enc(n,d)
     end
     return
   elseif nb_overlay and n == 3 and not browser.open then
-    nb_commit()
+    nb_commit(true)
     data.ui_index = 7 + nb_overlay
   end
 
@@ -2181,8 +2183,8 @@ function g.key(x, y, z)
         end
       elseif not view.notes_input then
         cond = have_substeps(y, x)
-        -- the nb overlay follows the held step: a param picked in it is committed
-        -- for what was selected until now, and releasing the step closes it
+        -- the nb overlay follows the held step: a param picked in it for the track is
+        -- committed, one picked for a step is dropped, and releasing the step closes it
         if nb_overlay then
           nb_commit()
           if z == 0 then nb_overlay = false end
