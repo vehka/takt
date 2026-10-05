@@ -276,6 +276,8 @@ Record and manage samples.
 
 **Lock indicator**: UI shows when parameter is locked to current step
 
+**On the grid**: a trig with parameter locks blinks in time with the clock: a beat at its normal brightness, a beat dimmer. A step's own note doesn't count as a lock, and the selected step stays bright.
+
 **Default values**: Unlocked steps use track-level default parameters
 
 ### Trigger Parameters

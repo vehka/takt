@@ -851,6 +851,21 @@ local function have_substeps(tr, step)
     end
 end
 
+-- keys of a step's table that aren't parameter locks. The note is left out:
+-- on a melodic track nearly every step has its own
+local NOT_A_LOCK = { lock = true, default = true, note = true }
+
+-- whether the trig at substep s plays with values of its own, different from the track's
+local function have_locks(tr, s)
+  local p = data[data.pattern][tr].params[s]
+  if p.lock ~= 1 then return false end
+  local track = data[data.pattern][tr].params[tostring(tr)]
+  for k, v in pairs(p) do
+    if not NOT_A_LOCK[k] and v ~= track[k] then return true end
+  end
+  return false
+end
+
 local function place_note(tr, step, note )
   data[data.pattern][tr][step] = 1
   data[data.pattern][tr].params[step].lock = 1
@@ -2317,6 +2332,8 @@ end
 
 function g.redraw()
   local glow = util.clamp(blink, 5, 15)
+  -- trigs with parameter locks blink in time: a beat at full level, a beat dimmed
+  local locks_dim = clock.get_beats() % 2 >= 1
   g:all(0)
   if view.notes_input and (not ALT and not SHIFT) then 
       linn.grid_redraw(g)
@@ -2348,6 +2365,9 @@ function g.redraw()
               or (x < t_start or x > t_len) and 5
               or data[data.pattern].track.mute[yy] and 5
               or 10
+              if locks_dim and level < 15 and have_locks(yy, substeps) then
+                level = level - 4
+              end
               g:led(x, y, level ) 
           end
         end
