@@ -468,7 +468,7 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 
 *Default parameters*
 
-- Until you choose others, the six slots point at a default set for the voice. Emplaitress, nb_polyperc, doubledecker and nb_fluid have their own sets (listed in `lib/nb_defaults.lua`); other voices get their first continuous parameters.
+- Until you choose others, the six slots point at a default set for the voice. Emplaitress, nb_pp, nb_polyperc, doubledecker and nb_fluid have their own sets (listed in `lib/nb_defaults.lua`); other voices get their first continuous parameters.
 - Emplaitress has a set per model. Slots 1-4 are always model, harmonics, timbre and morph. Slots 5-6 are decay and lpg color, except on the models that have their own envelope and ignore those two (string, modal, kick, snare, hat), where they are aux mix and fm env.
 - When you change the voice's model to one with a different set, a track without trigs gets the new set. If the track has trigs and its slots hold values, chosen parameters or locks, a window asks first: **K2** takes the new model's parameters and clears the slots' values and locks, **K3** keeps the old ones. The check is made for the selected track while its screen is showing. A model set by a step lock doesn't count as a change.
 

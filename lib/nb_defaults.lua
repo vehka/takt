@@ -42,6 +42,11 @@ return {
     },
   },
   {
+    -- nb_pp: the four macros (named after the model), then the low-pass gate
+    match = "^palette %d+$",
+    slots = { "harmonics", "timbre", "morph", "macro", "decay", "lpg_color" },
+  },
+  {
     match = "^polyperc %d+$",
     slots = { "cutoff", "decay", "pw", "tracking", "amp", "pan" },
   },
