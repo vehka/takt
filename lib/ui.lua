@@ -935,7 +935,8 @@ function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
                         --tile_offset = 1
                     --end
                     --print("lfo", i, "target", target - 1 - ((tr - 8) * 10), "tile", v[1]-tile_offset)
-                    if target - 1 - ((tr - 8) * 6) == (v[1] - tile_offset) then -- adjust to allow for crow output labels
+                    -- only the CC tiles: the slots of the track before would match tiles 1-6
+                    if v[1] > tile_offset and target - 1 - ((tr - 8) * 6) == (v[1] - tile_offset) then -- adjust to allow for crow output labels
                         lfo_name = "lfo " .. i 
                         lfo_tile = target - 1
                         --print("lfo_tile", lfo_tile)
