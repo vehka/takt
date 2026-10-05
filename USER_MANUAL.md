@@ -478,7 +478,7 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 
 - **K2** on a CC tile opens a window with the parameter's full name and the value it will be set to (marked `not set` while the slot only shows the current value). There **E2** chooses the parameter and **E3** the value; **K2** closes it. Turning E3 on a tile's name (ui_index 14-19) opens the same window.
 - E2 goes through the voice's own parameters in PARAMS menu order. Parameters that are hidden in the PARAMS menu, because they do nothing in the voice's current mode, are skipped.
-- A parameter chosen with E2 only takes effect when you turn E3 or close the window, so scrolling through the list changes nothing. Because the slot's value was meant for the old parameter, choosing a new one unsets the value, and at track level also drops the slot's step locks (the window says how many). Scroll back to the old parameter before closing to keep everything.
+- A parameter chosen with E2 only takes effect when you turn E3 or close the window, so scrolling through the list changes nothing. On a held step it takes E3: a parameter chosen there without a value is forgotten when the step is released. Because the slot's value was meant for the old parameter, choosing a new one unsets the value, and at track level also drops the slot's step locks (the window says how many). Scroll back to the old parameter before closing to keep everything.
 - In the window, the line beside the parameter name counts the steps that lock this slot. **Hold K3** to clear them all: every step of the track then follows the track's own setting for the slot again. Locks on other slots and the track's setting are kept.
 
 *Step locks and LFOs*
