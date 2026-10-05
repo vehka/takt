@@ -33,7 +33,7 @@ local textentry = require('textentry')
 local midi_out_devices = {}
 local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow devices
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
-local nb_voice_params = {} -- [voice name] = list of { id, key, index, label, name }: the params a track's CC slots can set
+local nb_voice_params = {} -- [voice name] = list of { id, key, index }: the params a track's CC slots can set
 local nb_param_key = {} -- [param id] = its key, which is the same in every instance of a voice
 local nb_overlay = false -- CC slot (1-6) shown in the nb param overlay, opened with K2
 local nb_overlay_step = false -- the overlay was opened by holding a step; it shows once the press is a hold, not a tap
@@ -413,11 +413,32 @@ local function nb_track_params(tr)
   return nb_voice_params[params:get("takt_nb_voice_" .. tr .. "_hidden_string")]
 end
 
+-- a tile's label for a param name: two letters each of its first two words,
+-- or four of its only one. Joining words don't count ("detune and sync" is DESY)
+local nb_label_skip = { ["and"] = true, ["or"] = true, ["to"] = true, ["of"] = true, ["the"] = true }
 local function nb_param_label(name)
-  local first, second = name:match("^(%S+)%s*(%S*)")
-  if not first then return "--" end
-  local label = second ~= "" and (first:sub(1, 2) .. second:sub(1, 2)) or first:sub(1, 4)
+  local words = {}
+  for word in name:gmatch("%w+") do
+    if not nb_label_skip[word:lower()] then words[#words + 1] = word end
+  end
+  if not words[1] then return "--" end
+  local label = words[2] and (words[1]:sub(1, 2) .. words[2]:sub(1, 2)) or words[1]:sub(1, 4)
   return label:upper()
+end
+
+-- a voice param's name and tile label, read when they are shown: a voice may
+-- rename its params (nb_pp names four of them after what the model does with
+-- them). A later param with the same name as an earlier one (emplaitress has
+-- two decays) gets its key added to tell them apart
+local function nb_param_names(list, e)
+  local name = params:lookup_param(e.id).name
+  local n = 1
+  for i = 1, e.index - 1 do
+    if params:lookup_param(list[i].id).name == name then n = n + 1 end
+  end
+  local label = nb_param_label(name)
+  if n > 1 then return name .. " (" .. e.key .. ")", label:sub(1, 3) .. n end
+  return name, label
 end
 
 -- the part of each id that tells a voice's params apart: the id without the
@@ -439,8 +460,7 @@ local function nb_param_keys(ids)
 end
 
 -- the list of a voice's params that the CC slots can set, from its settable
--- params in menu order. A later param with the same name as an earlier one
--- (emplaitress has two decays) gets its key added to tell them apart
+-- params in menu order
 local function nb_param_list(voice, found)
   local known
   for _, v in ipairs(nb_defaults) do
@@ -450,19 +470,11 @@ local function nb_param_list(voice, found)
   for i, p in ipairs(found) do ids[i] = p.id end
   local keys = nb_param_keys(ids)
   local list = { by_id = {}, by_key = {}, known = known }
-  local seen = {}
   for i, p in ipairs(found) do
     local key = keys[i]
     nb_param_key[p.id] = key
     if not (known and known.skip and tab.contains(known.skip, key)) then
-      local n = (seen[p.name] or 0) + 1
-      seen[p.name] = n
-      local label = nb_param_label(p.name)
-      local e = {
-        id = p.id, key = key, index = #list + 1,
-        name = n > 1 and p.name .. " (" .. key .. ")" or p.name,
-        label = n > 1 and label:sub(1, 3) .. n or label,
-      }
+      local e = { id = p.id, key = key, index = #list + 1 }
       list[e.index], list.by_id[e.id], list.by_key[key] = e, e, e
     end
   end
@@ -688,7 +700,7 @@ local function nb_add_params()
   ui.nb_enabled = true
   ui.nb_label = function(tr, p, i)
     local target = nb_slot(tr, p, i)
-    return target and target.label or "--"
+    return target and select(2, nb_param_names(nb_track_params(tr), target)) or "--"
   end
   ui.nb_value = function(tr, p, i, val)
     local target = nb_slot(tr, p, i)
@@ -2078,7 +2090,7 @@ function redraw(stage)
         local note = util.time() - nb_cleared < 1.5 and "locks cleared"
           or picking and (not data.selected[2] and locks > 0 and "drops " .. lock_text or "new param")
           or locks > 0 and lock_text .. ": hold K3"
-        ui.nb_overlay(nb_overlay, target and target.name or "--",
+        ui.nb_overlay(nb_overlay, target and nb_param_names(list, target) or "--",
           target and nb_value_string(target.id, val) or "--", val >= 0, note)
       end
       if nb_ask then ui.nb_confirm(nb_ask.variant) end
