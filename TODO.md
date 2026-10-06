@@ -1,5 +1,13 @@
 # TODO
 
+## Roadmap
+
+- Sample chopping.
+- A sample -> chop -> p-lock -> resample workflow.
+- Portability: an option to bundle a project's samples into its project
+  directory.
+- Fix the crow / Just Friends output (the UI shows params that do nothing).
+
 ## Trigless locks
 
 A step that changes parameters of the note that is already sounding, without
