@@ -1230,7 +1230,6 @@ function clocked_seq()
               metaseq() 
           end 
         end
-        clock.sync(1/128)
     end
 end
 
