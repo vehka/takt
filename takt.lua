@@ -1057,7 +1057,6 @@ local controls = {
       if z == 1 then
         if is_running then
           clock.transport.stop()
-          notes_off_midi()
         else
           clock.transport.start()
         end
@@ -1215,6 +1214,8 @@ function init()
 end
 
 function cleanup()
+  if sequencer_clock then clock.cancel(sequencer_clock) sequencer_clock = nil end
+  notes_off_midi()
   lfo.cleanup()
 end
 
@@ -1240,7 +1241,8 @@ function clock.transport.start()
   end
   is_running = true 
   seq_stage = 0
-  sequencer_clock = clock.run(clocked_seq) 
+  if sequencer_clock then clock.cancel(sequencer_clock) end
+  sequencer_clock = clock.run(clocked_seq)
   print("transport: run")
 end
 
@@ -1248,6 +1250,8 @@ function clock.transport.stop()
     if is_running then
         is_running = false 
         clock.cancel(sequencer_clock)
+        sequencer_clock = nil
+        notes_off_midi()
         print("transport: stop")
     else 
         print("transport: already stopped")
