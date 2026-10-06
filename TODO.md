@@ -40,3 +40,21 @@ tracks.
   voices in `lib/nb_defaults.lua`. Voices without send params only reach the
   mod's insert on the main output.
 - MIDI tracks: no audio in norns, nothing to do.
+
+## A cheaper reverb than JPverb
+
+JPverb is the most expensive part of `Engine_Timber_Takt.sc`. On the shield
+(Pi 3B+) it costs about 27 points of JACK DSP load (38% vs 11% at idle before
+the reverb was paused while silent). It is now paused while its input and tail
+are silent, but it still runs whenever the sequencer plays, since the default
+send is -48 dB.
+
+- Candidates: FreeVerb2 (core SC), GVerb (core SC), Greyhole (sc3-plugins).
+  Measure each on the shield with the same settings, and listen: JPverb's long,
+  modulated tail is part of takt's sound.
+- Measure the cost while playing, not just at idle: the DSP load with a
+  pattern running, and xruns from `_norns.audio_get_xrun_count()`.
+- Keep the reverb params working (`reverbTime`, `reverbSize` …) or map them to
+  the new reverb's params.
+- Related: sending to a reverb from the fx mod instead (see above) would let
+  users choose the reverb and its cost.
