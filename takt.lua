@@ -582,7 +582,7 @@ local function change_pattern(pt)
 end
 
 local function metaseq(stage)
-    if data[data.pattern].track.pos[1] == data[data.pattern].track.len[1] - 1 then
+    if data[data.pattern].track.pos[1] == data[data.pattern].track.len[1] then
       
         if ptn_change_pending then
           change_pattern(ptn_change_pending)
@@ -599,7 +599,9 @@ end
 local function advance_step(tr, counter)
   local start = data[data.pattern].track.start[tr]
   local len = data[data.pattern].track.len[tr]
-  data[data.pattern].track.pos[tr] = util.clamp((data[data.pattern].track.pos[tr] + 1) % (len ), start, len) -- voice pos
+  -- voice pos: start..len inclusive, wrapping back to start
+  local nxt = data[data.pattern].track.pos[tr] + 1
+  data[data.pattern].track.pos[tr] = (nxt > len or nxt < start) and start or nxt
   data[data.pattern].track.cycle[tr] = counter % 256 == 0 and data[data.pattern].track.cycle[tr] + 1 or data[data.pattern].track.cycle[tr]  --data[data.pattern].track.cycle[tr]
 end
 
