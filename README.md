@@ -30,19 +30,19 @@ Use E3 to scroll to the right to select a chord type (M = major, m = minor, etc)
 
 Chord types and root notes can be adjusted per step just like any other parameter lock.
 
-Just Friends, w/syn and crow support
-------------------------------------
-On the Parameters page, ensure that your JF, w/syn or crow output options are set to on.
+Just Friends, w/syn and crow
+----------------------------
+Takt plays these through [nb](https://github.com/sixolet/nb) voices, not with code of its own:
 
-![docs](lib/jf_enabled.png)
+- Just Friends: [nb_jf](https://github.com/sixolet/nb_jf) (`jf n 1`-`jf n 6`, `jf poly`, `jf unison`, `jf kit`, `jf mpe`)
+- crow CV: [nb_crow](https://github.com/sixolet/nb_crow) (`crow 1/2`, `crow 3/4`, `crow para`)
+- w/syn: [nb_wsyn](https://github.com/sixolet/nb_wsyn) (`w/syn`)
 
-On the MIDI page, use E2 to scroll to the Device tile. Use E3 to scroll past the first four MIDI device number selections. Depending on which i2c devices are enabled in Parameters, you'll be able to select JF, w/syn or crow.
+Install the mod, enable it in SYSTEM > MODS and restart. Then choose the voice for a MIDI track in PARAMS > OUTPUTS > nb voices, and set the track's Device tile to `NB`. The six CC tiles set the voice's parameters (crow's envelope, w/syn's ramp and FM...), per step if you like. See "nb Voices" in the [user manual](USER_MANUAL.md).
 
-![docs](lib/jf_selected.png)
+This replaces the earlier `JF`, `W/` and `CROW` devices and the crow / jf / wsyn output options. Tracks of an old project that used them show `--` as their device and are silent until you set them to `NB`.
 
-This track will send out notes to the selected device.
-Note that when w/syn is selected, the UI updates to display various w/syn parameters. Currently these do nothing. You need to adjust w/syn via the Parameters page.
-Similarly, when crow is selected, the UI displays various parameters which currently do nothing. Watch this space for updates.
+**Not yet tested with the hardware.** If you have a crow, Just Friends or w/syn, reports are welcome.
 
 LFO output
 ----------

@@ -61,4 +61,19 @@ return {
     match = "^fluid %d+$",
     slots = { "volume", "pan", "reverb", "chorus", "program", "bank" },
   },
+  {
+    -- nb_crow: the envelope of the output pair; not "tuned to" (freq), which
+    -- retunes the voice
+    match = "^crow %d/%d$",
+    slots = { "attack_time", "decay_time", "sustain", "release_time", "portomento", "decay_shape" },
+  },
+  {
+    match = "^crow para$",
+    slots = { "attack_time", "decay_time", "sustain", "release_time", "attack_shape", "decay_shape" },
+  },
+  {
+    -- nb_wsyn: the fm ratio (fm_num, fm_denom) can be picked for a slot
+    match = "^w/syn$",
+    slots = { "w/curve", "w/ramp", "w/fm_index", "w/fm_env", "w/lpg_time", "w/lpg_symmetry" },
+  },
 }

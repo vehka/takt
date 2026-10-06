@@ -6,7 +6,8 @@
 - A sample -> chop -> p-lock -> resample workflow.
 - Portability: an option to bundle a project's samples into its project
   directory.
-- Fix the crow / Just Friends output (the UI shows params that do nothing).
+- crow, Just Friends and w/syn now go through nb voices (nb_crow, nb_jf,
+  nb_wsyn). Needs testing by someone with the hardware.
 
 ## Trigless locks
 

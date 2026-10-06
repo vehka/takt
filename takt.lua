@@ -31,7 +31,7 @@ local fileselect = require('fileselect')
 local textentry = require('textentry')
 --
 local midi_out_devices = {}
-local NB_DEVICE = 11 -- device number of a MIDI track's nb voice, after the crow devices
+local NB_DEVICE = 11 -- device number of a MIDI track's nb voice; 5-10 were the built-in crow, JF and w/syn outputs
 local nb_out = {} -- [track] = the track's nb voice, wrapped to look like a midi device
 local nb_voice_params = {} -- [voice name] = list of { id, key, index }: the params a track's CC slots can set
 local nb_param_key = {} -- [param id] = its key, which is the same in every instance of a voice
@@ -59,12 +59,7 @@ is_running = false
 seq_stage = 0
 step = 0
 pattern_name = 'new'
-pluckylogger_update = false
 
--- Cached device type checks (updated when params change, not every seqrun call)
-local takt_jf_enabled = false
-local takt_wsyn_enabled = false
-local takt_crow_mode = 1  -- 1=off, 2=full voice, 3=2 voices, 4=jf+crow
 local grid_brightness_mode = 1  -- 1=varibright (16 levels), 2=4-step (2011 model)
 
 local lfo_targets = {
@@ -135,14 +130,6 @@ local function get_chord(note, chord)
   end
   return notes
 end
-
-local crow_out_1_offset_v = 0
-local crow_out_2_offset_v = 0
-local crow_out_3_offset_v = 0
-local crow_out_4_offset_v = 0
-
-local wsyn_params = {"Curve", "Ramp", "FM index", "FM env", "FM ratio numerator", "FM ratio denominator", "LPG time", "LPG symmetry"}
-ASL_SHAPES = {'linear','sine','logarithmic','exponential','now'}
 
 local scale_names = {}
 local my_scale_type = "major"
@@ -721,11 +708,6 @@ end
 -- devices the DEV tile can show by name; the encoder skips the others
 local function device_available(device)
   if device <= 4 then return true end
-  if device == 5 then return takt_jf_enabled end
-  if device == 6 then return takt_wsyn_enabled end
-  if device == 7 then return takt_crow_mode == 2 end
-  if device == 8 or device == 9 then return takt_crow_mode == 3 end
-  if device == 10 then return takt_crow_mode == 4 end
   return device == NB_DEVICE and nb ~= nil
 end
 
@@ -1118,82 +1100,23 @@ local function seqrun(counter)
               choke[tr] = step_param.sample
               
             else
-              if takt_jf_enabled and step_param.device == 5 then  -- add support for takt_jf_crow
-                  crow.ii.jf.play_note((step_param.note-60)/12,(step_param.velocity/127) * 10)
-                  --print("jf", step_param.note)
-                  local chord = get_chord(step_param.note, step_param.chord)
-                  if chord then
-                      for i = 2, #chord do
-                          crow.ii.jf.play_note((chord[i]-60)/12,(step_param.velocity/127) * 10)
-                      end
-                  end
-              elseif takt_wsyn_enabled and step_param.device == 6 then
-                  crow.ii.wsyn.lpg_time(util.linlin(1,256,5,-5,step_param.length))
-                  -- update the CC values if they've been changed directly by pluckylogger 
-                  if pluckylogger_update then
-                    step_param['cc_1_val'] = params:get("wsyn_ramp") 
-                    step_param['cc_2_val'] = params:get("wsyn_fm_index") 
-                    step_param['cc_3_val'] = params:get("wsyn_fm_env") 
-                    step_param['cc_4_val'] = params:get("wsyn_fm_ratio_num") 
-                    step_param['cc_5_val'] = params:get("wsyn_fm_ratio_den") 
-                    step_param['cc_6_val'] = params:get("wsyn_lpg_symmetry") 
-                    pluckylogger = false
-                  end
-                  if step_param['cc_1_val'] then
-                    crow.ii.wsyn.ramp(step_param['cc_1_val']/10)
-                  end
-                  if step_param['cc_2_val'] then
-                    crow.ii.wsyn.fm_index(step_param['cc_2_val']/10)
-                  end
-                  if step_param['cc_3_val'] then
-                    crow.ii.wsyn.fm_env(step_param['cc_3_val']/10)
-                  end
-                  if step_param['cc_4_val'] and step_param['cc_5_val'] then
-                    crow.ii.wsyn.fm_ratio(step_param['cc_4_val']/10,step_param['cc_5_val']/10)
-                  end
-                  if step_param['cc_6_val'] then
-                    crow.ii.wsyn.lpg_symmetry(step_param['cc_6_val']/10)
-                  end
-                  crow.ii.wsyn.play_note((step_param.note-60)/12,(step_param.velocity/127) * 5)
-                  --print("wsyn", step_param.note)
-                  local chord = get_chord(step_param.note, step_param.chord)
-                  if chord then
-                      for i = 2, #chord do
-                          crow.ii.wsyn.play_note((chord[i]-60)/12,(step_param.velocity/127) * 5)
-                      end
-                  end
-              elseif takt_crow_mode == 2 and step_param.device == 7 then
-                  crow.output[1].volts = (step_param.note-0)/12 + crow_out_1_offset_v
-                  crow.output[2].action = string.format("pulse(%.3f,10)", (step_param.length* 60/data[data.pattern].bpm/10))
-                  crow.output[2]() -- this will be a trigger? what if we want a gate = note length?
-                  crow.output[3].volts = util.clamp((step_param.velocity/12),0,10) + crow_out_3_offset_v -- avoid clipping 10V
-                  --crow.output[4].volts = util.clamp((step_param.velocity/12),0,10) + crow_out_4_offset_v -- avoid clipping 10V
-                  --print("crow 3", util.clamp((step_param.velocity/12),0,10) + crow_out_3_offset_v)
-                  local crow4 = step_param['cc_1_val']
-                  if crow4 then
-                      --print("cc_1", crow4)
-                      --print("crow 4", util.clamp((crow4/12),0,10) + crow_out_4_offset_v)
-                      crow.output[4].volts = util.clamp((crow4/12),0,10) + crow_out_4_offset_v -- avoid clipping 10V
-                  end
-              else -- handle normal midi output
-                  local dev = out_device(tr, step_param.device)
-                  set_cc(tr, step_param)
+              local dev = out_device(tr, step_param.device)
+              set_cc(tr, step_param)
                   
-                  if step_param.program_change >= 0 then
-                    dev:program_change(step_param.program_change, step_param.channel)
-                  end
-
-                  midi_note_off(tr) -- end the previous note if it is still sounding
-                  dev:note_on( step_param.note, step_param.velocity, step_param.channel )
-                  --print("note", step_param.note)
-                  local chord = get_chord(step_param.note, step_param.chord)
-                  if chord then
-                      for i = 2, #chord do
-                          dev:note_on( chord[i], step_param.velocity, step_param.channel )
-                      end
-                  end
-                  choke[tr] = { step_param.device, step_param.note, step_param.velocity, step_param.channel, pos, step_param.length, step_param.chord} 
+              if step_param.program_change >= 0 then
+                dev:program_change(step_param.program_change, step_param.channel)
               end
+
+              midi_note_off(tr) -- end the previous note if it is still sounding
+              dev:note_on( step_param.note, step_param.velocity, step_param.channel )
+              --print("note", step_param.note)
+              local chord = get_chord(step_param.note, step_param.chord)
+              if chord then
+                  for i = 2, #chord do
+                      dev:note_on( chord[i], step_param.velocity, step_param.channel )
+                  end
+              end
+              choke[tr] = { step_param.device, step_param.note, step_param.velocity, step_param.channel, pos, step_param.length, step_param.chord} 
             end
           end
        end
@@ -1231,15 +1154,6 @@ local function midi_event(d)
       if tr < 8 then
           engine.noteOff(tr)
           engine.noteOn(tr, music.note_num_to_freq(msg.note), msg.vel / 127, data[data.pattern][tr].params[tostring(tr)].sample)
-      elseif params:get("takt_jf")==2 and step_param.device == 5 then 
-          crow.ii.jf.play_note((msg.note-60)/12,(msg.vel/127) * 10)
-      elseif params:get("takt_wsyn")==2 and step_param.device == 6 then 
-          --crow.ii.wsyn.lpg_time(util.linlin(1,127,5,-5,step_param.length))
-          crow.ii.wsyn.play_note((msg.note-60)/12,(msg.vel/127) * 5)
-      elseif params:get("takt_crow")==2 and step_param.device == 7 then 
-          crow.output[1].volts = (msg.note-0)/12 + crow_out_1_offset_v 
-          crow.output[2].action = string.format("pulse(%.3f,10)", (step_param.length* 60/data[data.pattern].bpm/10))
-          crow.output[2].execute() -- this will be a trigger? what if we want a gate = note length?
       else
           out_device(tr, step_param.device):note_on( msg.note, msg.vel, step_param.channel )
       end
@@ -1438,16 +1352,7 @@ end
 local midi_step_params = {
 
   [1] = function(tr, s, d) -- note
-      -- @chailight adjusted for crow raw voltage output
-      --print("device", data[data.pattern][tr].params[s].device)
-      --print("output", params:get("crow/output_quant"))
-      if data[data.pattern][tr].params[s].device == 7 and params:get("crow/output_quant") == 2 then
-        --print("note", data[data.pattern][tr].params[s].note)
-        --print("delta", d) 
-        data[data.pattern][tr].params[s].note = util.clamp(data[data.pattern][tr].params[s].note + d, 0, 120)
-      else
-        data[data.pattern][tr].params[s].note = util.clamp(data[data.pattern][tr].params[s].note + d, 25, 127)
-      end
+      data[data.pattern][tr].params[s].note = util.clamp(data[data.pattern][tr].params[s].note + d, 25, 127)
   end,
   [2] = function(tr, s, d) -- chord
       data[data.pattern][tr].params[s].chord = util.clamp(data[data.pattern][tr].params[s].chord + d, -1, 26)
@@ -1461,67 +1366,40 @@ local midi_step_params = {
   [5] = function(tr, s, d) -- channel
       data[data.pattern][tr].params[s].channel = util.clamp(data[data.pattern][tr].params[s].channel + d, 1, 16)
   end,
-  --@chailight increase the options for the device to enable selecting JF, WSyn and crow 
   [6] = function(tr, s, d) -- device
       data[data.pattern][tr].params[s].device = next_device(data[data.pattern][tr].params[s].device, d)
-      if params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_1_val = params:get("wsyn_ramp") 
-        data[data.pattern][tr].params[s].cc_2_val = params:get("wsyn_fm_index") 
-        data[data.pattern][tr].params[s].cc_3_val = params:get("wsyn_fm_env") 
-        data[data.pattern][tr].params[s].cc_4_val = params:get("wsyn_fm_ratio_num") 
-        data[data.pattern][tr].params[s].cc_5_val = params:get("wsyn_fm_ratio_den") 
-        data[data.pattern][tr].params[s].cc_6_val = params:get("wsyn_lpg_symmetry") 
-      end
   end,
   [7] = function(tr, s, d) -- pgm
       data[data.pattern][tr].params[s].program_change = util.clamp(data[data.pattern][tr].params[s].program_change + d, -1, 127)
   end,
   
   [8] = function(tr, s, d) -- 
-      if nb_cc_val(tr, s, 1, d) then
-      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_1_val = util.clamp(data[data.pattern][tr].params[s].cc_1_val + d, -50, 50)
-      else
+      if not nb_cc_val(tr, s, 1, d) then
         data[data.pattern][tr].params[s].cc_1_val = util.clamp(data[data.pattern][tr].params[s].cc_1_val + d, -1, 127)
       end
   end,
   [9] = function(tr, s, d) -- 
-      if nb_cc_val(tr, s, 2, d) then
-      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_2_val = util.clamp(data[data.pattern][tr].params[s].cc_2_val + d, -50, 50)
-      else
+      if not nb_cc_val(tr, s, 2, d) then
         data[data.pattern][tr].params[s].cc_2_val = util.clamp(data[data.pattern][tr].params[s].cc_2_val + d, -1, 127)
       end
   end,
   [10] = function(tr, s, d) -- 
-      if nb_cc_val(tr, s, 3, d) then
-      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_3_val = util.clamp(data[data.pattern][tr].params[s].cc_3_val + d, -50, 50)
-      else
+      if not nb_cc_val(tr, s, 3, d) then
         data[data.pattern][tr].params[s].cc_3_val = util.clamp(data[data.pattern][tr].params[s].cc_3_val + d, -1, 127)
       end
   end,
   [11] = function(tr, s, d) -- 
-      if nb_cc_val(tr, s, 4, d) then
-      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_4_val = util.clamp(data[data.pattern][tr].params[s].cc_4_val + d, 1, 20)
-      else
+      if not nb_cc_val(tr, s, 4, d) then
         data[data.pattern][tr].params[s].cc_4_val = util.clamp(data[data.pattern][tr].params[s].cc_4_val + d, -1, 127)
       end
   end,
   [12] = function(tr, s, d) -- 
-      if nb_cc_val(tr, s, 5, d) then
-      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_5_val = util.clamp(data[data.pattern][tr].params[s].cc_5_val + d, 1, 20)
-      else
+      if not nb_cc_val(tr, s, 5, d) then
         data[data.pattern][tr].params[s].cc_5_val = util.clamp(data[data.pattern][tr].params[s].cc_5_val + d, -1, 127)
       end
   end,
   [13] = function(tr, s, d) -- 
-      if nb_cc_val(tr, s, 6, d) then
-      elseif params:get("takt_wsyn")==2 and data[data.pattern][tr].params[s].device == 6 then
-        data[data.pattern][tr].params[s].cc_6_val = util.clamp(data[data.pattern][tr].params[s].cc_6_val + d, -50, 50)
-      else
+      if not nb_cc_val(tr, s, 6, d) then
         data[data.pattern][tr].params[s].cc_6_val = util.clamp(data[data.pattern][tr].params[s].cc_6_val + d, -1, 127)
       end
   end,
@@ -1793,37 +1671,9 @@ function init()
 
     -- === OUTPUTS ===
     params:add_separator("takt_outputs", "OUTPUTS")
-    params:add_option("takt_crow","crow output",{"no","full voice", "2 voices", "jf + crow"},1)
-    params:add_option("takt_jf","jf output",{"no","yes"},1)
-    params:add_option("takt_wsyn","wsyn output",{"no","yes"},1)
     params:add_control("takt_midi_input_track","midi input track",controlspec.new(0, 14, 'lin', 1, 0, ""))
-    params:set_action("takt_jf",function(x)
-        takt_jf_enabled = (x == 2)  -- Cache the value
-        if x==2 then
-          crow.ii.jf.mode(1)
-        end
-    end)
-    params:set_action("takt_wsyn",function(x)
-        takt_wsyn_enabled = (x == 2)  -- Cache the value
-        if x==2 then
-          crow.ii.wsyn.play_voice(0,0,0)
-        end
-    end)
-    params:set_action("takt_crow",function(x) -- need to ensure crow clock out is turned off
-        takt_crow_mode = x  -- Cache the value
-        if x==2 then
-          print("init crow full voice")
-          crow.output[1].volts = 0.0
-          crow.output[2].volts = 0.0
-          crow.output[3].volts = 0.0
-          crow.output[4].volts = 0.0
-        end
-    end)
     nb_add_params()
-    wsyn_add_params()
     params:bang()
-    params:set("wsyn_init",1)
-    crow_add_params()
 
     -- === MODULATION ===
     lfo.targets = lfo_targets
@@ -2164,22 +2014,10 @@ function g.key(x, y, z)
     local tr = data.selected[1]
     local device = data[data.pattern][tr].params[tr].device
     local note = linn.grid_key(x, y, z, device and out_device(tr, device))
-    local vel = data[data.pattern][tr].params[tr].velocity
-    local len  = data[data.pattern][tr].params[tr].length
-    --@chailight support for jf and wsyn output devices needed here
     local pos = data[data.pattern].track.pos[tr]
     if note then 
       if tr < 8 then
         engine.noteOn(data.selected[1], music.note_num_to_freq(note), 1, data[data.pattern][data.selected[1]].params[tr].sample)
-      elseif params:get("takt_jf")==2 and device == 5 then 
-          crow.ii.jf.play_note((note-60)/12,(vel/127) * 10)
-      elseif params:get("takt_wsyn")==2 and device == 6 then 
-          --crow.ii.wsyn.lpg_time(util.linlin(1,127,5,-5,step_param.length))
-          crow.ii.wsyn.play_note((note-60)/12,(vel/127) * 5)
-      elseif params:get("takt_crow")==2 and device == 7 then 
-          crow.output[1].volts = (note-0)/12 + crow_out_1_offset_v 
-          crow.output[2].action = string.format("pulse(%.3f,10)", (len * 60/data[data.pattern].bpm/10))
-          crow.output[2].execute() -- this will be a trigger? what if we want a gate = note length?
       end
       -- MIDI devices: linn.grid_key() has already sent the note
       if is_running and PATTERN_REC then 
@@ -2449,304 +2287,6 @@ function main_screen_control_params()
         end)
     end
 end
-
-function crow_add_params()
-    params:add_group("crow options", 24)
-    params:add {
-        type = "option",
-        id = "crow/output_quant",
-        name = "output quantisation",
-        options = {"note", "raw"},
-        default = 1,
-    }
-    params:add{
-    type = "option",
-    id = "crow_pitch_range_1",
-    name = "output 1 range",
-    options = {"0-10V", "+/-5V"},
-    action = function(val)
-      crow_out_1_offset_v = val and 0 or -5
-    end,
-    }
-    params:add{
-    type = "option",
-    id = "crow_pitch_range_2",
-    name = "output 2 range",
-    options = {"0-10V", "+/-5V"},
-    action = function(val)
-      crow_out_2_offset_v = val and 0 or -5
-    end,
-    }
-    params:add{
-    type = "option",
-    id = "crow_pitch_range_3",
-    name = "output 3 range",
-    options = {"0-10V", "+/-5V"},
-    action = function(val)
-      crow_out_3_offset_v = val and 0 or -5
-    end,
-    }
-    params:add{
-    type = "option",
-    id = "crow_pitch_range_4",
-    name = "output 4 range",
-    options = {"0-10V", "+/-5V"},
-    action = function(val)
-      crow_out_4_offset_v = val and 0 or -5
-    end,
-    }
-    params:add_control("crow/attack_time", "attack", controlspec.new(0.0001, 3, 'exp', 0, 0.1, "s"))
-    params:add_option("crow/attack_shape", "attack shape", ASL_SHAPES, 3)
-    params:add_control("crow/decay_time", "decay", controlspec.new(0.0001, 10, 'exp', 0, 1.0, "s"))
-    params:add_option("crow/decay_shape", "decay shape", ASL_SHAPES, 4)
-    params:add_control("crow/sustain", "sustain", controlspec.new(0.0, 1.0, 'lin', 0, 0.75, ""))
-    params:add_control("crow/release_time", "release", controlspec.new(0.0001, 10, 'exp', 0, 0.5, "s"))
-    params:add_option("crow/release_shape", "release shape", ASL_SHAPES, 4)
-    params:add_control("crow/portomento", "portomento", controlspec.new(0.0, 1, 'lin', 0, 0.0, "s"))
-    params:add_binary("crow/legato", "legato", "toggle", 1)
-    params:add_separator()
-    params:add_binary("crow/txo", "txo", "toggle", 1)
-    params:add_control("crow/txo_1_lfo_freq", "LFO 1 freq", controlspec.new(1, 1000, 'lin', 10, 150, ""))
-    params:set_action("crow/txo_1_lfo_freq",function(x)
-      crow.ii.txo.osc_lfo(1,x)
-    end)
-    params:add_control("crow/txo_1_lfo_depth", "LFO 1 depth", controlspec.new(-10, 10, 'lin', .1, 5, ""))
-    params:set_action("crow/txo_1_lfo_depth",function(x)
-      crow.ii.txo.cv(1,x)
-    end)
-    params:add_control("crow/txo_2_lfo_freq", "LFO 2 freq", controlspec.new(1, 1000, 'lin', 10, 150, ""))
-    params:set_action("crow/txo_2_lfo_freq",function(x)
-      crow.ii.txo.osc_lfo(2,x)
-    end)
-    params:add_control("crow/txo_2_lfo_depth", "LFO 2 depth", controlspec.new(-10, 10, 'lin', .1, 5, ""))
-    params:set_action("crow/txo_2_lfo_depth",function(x)
-      crow.ii.txo.cv(2,x)
-    end)
-    params:add_control("crow/txo_3_lfo_freq", "LFO 3 freq", controlspec.new(1, 1000, 'lin', 10, 150, ""))
-    params:set_action("crow/txo_3_lfo_freq",function(x)
-      crow.ii.txo.osc_lfo(3,x)
-    end)
-    params:add_control("crow/txo_3_lfo_depth", "LFO 3 depth", controlspec.new(-10, 10, 'lin', .1, 5, ""))
-    params:set_action("crow/txo_3_lfo_depth",function(x)
-      crow.ii.txo.cv(3,x)
-    end)
-    params:add_control("crow/txo_4_lfo_freq", "LFO 4 freq", controlspec.new(1, 1000, 'lin', 10, 150, ""))
-    params:set_action("crow/txo_4_lfo_freq",function(x)
-      crow.ii.txo.osc_lfo(4,x)
-    end)
-    params:add_control("crow/txo_4_lfo_depth", "LFO 4 depth", controlspec.new(-10, 10, 'lin', .1, 5, ""))
-    params:set_action("crow/txo_4_lfo_depth",function(x)
-      crow.ii.txo.cv(4,x)
-    end)
-end
-
-function wsyn_add_params()
-  params:add_group("w/syn",12)
-  params:add {
-    type = "option",
-    id = "wsyn_ar_mode",
-    name = "AR mode",
-    options = {"off", "on"},
-    default = 2,
-    action = function(val)
-      crow.send("ii.wsyn.ar_mode(".. (val-1) ..")")
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_vel",
-    name = "Velocity",
-    controlspec = controlspec.new(0, 5, "lin", 0, 2, "v"),
-    action = function(val)
-      pset_wsyn_vel = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_curve",
-    name = "Curve",
-    controlspec = controlspec.new(-5, 5, "lin", 0, 0, "v"),
-    action = function(val)
-      crow.send("ii.wsyn.curve(" .. val .. ")")
-      pset_wsyn_curve = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_ramp",
-    name = "Ramp",
-    controlspec = controlspec.new(-5, 5, "lin", 0, 0, "v"),
-    action = function(val)
-      crow.send("ii.wsyn.ramp(" .. val .. ")")
-      pset_wsyn_ramp = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_fm_index",
-    name = "FM index",
-    controlspec = controlspec.new(0, 5, "lin", 0, 0, "v"),
-    action = function(val)
-      crow.send("ii.wsyn.fm_index(" .. val .. ")")
-      pset_wsyn_fm_index = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_fm_env",
-    name = "FM env",
-    controlspec = controlspec.new(-5, 5, "lin", 0, 0, "v"),
-    action = function(val)
-      crow.send("ii.wsyn.fm_env(" .. val .. ")")
-      pset_wsyn_fm_env = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_fm_ratio_num",
-    name = "FM ratio numerator",
-    controlspec = controlspec.new(1, 20, "lin", 1, 2),
-    action = function(val)
-      crow.send("ii.wsyn.fm_ratio(" .. val .. "," .. params:get("wsyn_fm_ratio_den") .. ")")
-      pset_wsyn_fm_ratio_num = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_fm_ratio_den",
-    name = "FM ratio denominator",
-    controlspec = controlspec.new(1, 20, "lin", 1, 1),
-    action = function(val)
-      crow.send("ii.wsyn.fm_ratio(" .. params:get("wsyn_fm_ratio_num") .. "," .. val .. ")")
-      pset_wsyn_fm_ratio_den = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_lpg_time",
-    name = "LPG time",
-    controlspec = controlspec.new(-5, 5, "lin", 0, 0, "v"),
-    action = function(val)
-      crow.send("ii.wsyn.lpg_time(" .. val .. ")")
-      pset_wsyn_lpg_time = val
-    end
-  }
-  params:add {
-    type = "control",
-    id = "wsyn_lpg_symmetry",
-    name = "LPG symmetry",
-    controlspec = controlspec.new(-5, 5, "lin", 0, 0, "v"),
-    action = function(val)
-      crow.send("ii.wsyn.lpg_symmetry(" .. val .. ")")
-      pset_wsyn_lpg_symmetry = val
-    end
-  }
-  params:add{
-    type = "trigger",
-    id = "wsyn_pluckylog",
-    name = "Pluckylogger >>>",
-    action = function()
-      params:set("wsyn_curve", math.random(-40, 40)/10)
-      params:set("wsyn_ramp", math.random(-5, 5)/10)
-      params:set("wsyn_fm_index", math.random(-50, 50)/10)
-      params:set("wsyn_fm_env", math.random(-50, 40)/10)
-      params:set("wsyn_fm_ratio_num", math.random(1, 4))
-      params:set("wsyn_fm_ratio_den", math.random(1, 4))
-      params:set("wsyn_lpg_time", math.random(-28, -5)/10)
-      params:set("wsyn_lpg_symmetry", math.random(-50, -30)/10)
-      pluckylogger_update = true
-    end
-  }
-  params:add{
-    type = "trigger",
-    id = "wsyn_randomize",
-    name = "Randomize all >>>",
-    action = function()
-      params:set("wsyn_curve", math.random(-50, 50)/10)
-      params:set("wsyn_ramp", math.random(-50, 50)/10)
-      params:set("wsyn_fm_index", math.random(0, 50)/10)
-      params:set("wsyn_fm_env", math.random(-50, 50)/10)
-      params:set("wsyn_fm_ratio_num", math.random(1, 20))
-      params:set("wsyn_fm_ratio_den", math.random(1, 20))
-      params:set("wsyn_lpg_time", math.random(-50, 50)/10)
-      params:set("wsyn_lpg_symmetry", math.random(-50, 50)/10)
-      pluckylogger_update = true
-    end
-  }
-  params:add{
-    type = "trigger",
-    id = "wsyn_init",
-    name = "Init",
-    action = function()
-      params:set("wsyn_curve", pset_wsyn_curve)
-      params:set("wsyn_ramp", pset_wsyn_ramp)
-      params:set("wsyn_fm_index", pset_wsyn_fm_index)
-      params:set("wsyn_fm_env", pset_wsyn_fm_env)
-      params:set("wsyn_fm_ratio_num", pset_wsyn_fm_ratio_num)
-      params:set("wsyn_fm_ratio_den", pset_wsyn_fm_ratio_den)
-      params:set("wsyn_lpg_time", pset_wsyn_lpg_time)
-      params:set("wsyn_lpg_symmetry", pset_wsyn_lpg_symmetry)
-      params:set("wsyn_vel", pset_wsyn_vel)
-    end
-  }
-  params:hide("wsyn_init")
-end
-
-crow_player = {
-  channel_map={0, 0},
-}
-
-function crow_player:play_note(note, vel, length, channel, track)
-  local v8 = (note - 0)/12
-  local v_vel = (vel/127) * 10
-  local pitch_o = 0;
-  local envelope_o = 0;
-  local voice = 0;
-  local attack = params:get("crow/attack_time")
-  local attack_shape = ASL_SHAPES[params:get("crow/attack_shape")]
-  local decay = params:get("crow/decay_time")
-  local decay_shape = ASL_SHAPES[params:get("crow/decay_shape")]
-  local sustain = params:get("crow/sustain")
-  local release = params:get("crow/release_time")
-  local release_shape = ASL_SHAPES[params:get("crow/release_shape")]
-  local portomento = params:get("crow/portomento")
-  local legato = params:get("crow/legato")
-
-  if params:get("output "..track) == CROW_12_VOICE then
-    voice = 1
-    pitch_o = 1
-    envelope_o = 2
-  else
-    voice = 2
-    pitch_o = 3
-    envelope_o = 4
-  end
-  local was = self.channel_map[voice]
-  local now = was + 1
-  self.channel_map[voice] = now
-  if was then
-    crow.output[pitch_o].action = string.format("{ to(%f,%f,sine) }", v8, portomento)
-    crow.output[pitch_o]()
-  else
-    crow.output[pitch_o].volts = v8
-  end
-  if (was > 0) and (legato > 0) then
-    crow.output[envelope_o].action = string.format("{ to(%f,%f,%s) }", v_vel*sustain, decay, decay_shape)
-  else
-    crow.output[envelope_o].action = string.format("{ to(%f,%f,%s), to(%f,%f,%s) }", v_vel, attack, attack_shape, v_vel*sustain, decay, decay_shape)
-  end
-  crow.output[envelope_o]()
-  clock.run(function()
-    clock.sleep(clock.get_beat_sec() * length)
-    if self.channel_map[voice] == now then
-      self.channel_map[voice] = 0
-      crow.output[envelope_o].action = string.format("{ to(%f,%f,%s) }", 0, release, release_shape)
-      crow.output[envelope_o]()
-    end
-  end)
-end
--- norns.crow.send( "for n=1,4 do ii.txo.tr_pulse(n) end" )
--- crow.output[1].action = "lfo(1.25,10)"
 
 function build_scale()
   my_scale = music.generate_scale_of_length(params:get("root_note"), params:get("scale_mode"), 16)

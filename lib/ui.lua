@@ -1,6 +1,6 @@
 -- takt ui @its_your_bedtime
 -- modified by @chailight to support
--- chords, JF and WSYN
+-- chords
 
 local ui = { waveform = {}, in_l = 0, in_r = 0, out_l = 0, out_r = 0, vu_l, vu_r, vu_o_l, vu_o_r }
 local note_num_to_name = require ('musicutil').note_num_to_name
@@ -18,17 +18,6 @@ local midi_name_lookup = {
 
 --@chailight chord name display
 local chord_name_lookup = {"M", "m", "D7", "M7", "m7", "mM7", "M6", "m6", "M69", "m69", "D9", "M9", "m9", "D11", "M11", "m11", "D13", "M13", "m13", "Sus4", "7Sus4", "Dim", "Dim7", "hD7", "Aug", "A7" }
-
---@chailight wsyn param display
-local wsyn_params_lookup = {"--", "Ramp", "FM i", "FM e", "RN", "RD", "Sym"}
-local jf_crow_params_lookup = {"--", "CR1", "CR2", "CR3", "CR4", "--", "--"}
-local crow_full_voice_params_lookup = {"--","CR4", "A", "D", "S", "R", "Port"}
-local crow_2_voice_params_lookup = {"--", "A", "D", "S", "R", "Port", "--"}
-
---local wsyn_on = {false,false,false,false,false,false,false}
---local crow_full_voice_on = {false,false,false,false,false,false,false}
---local crow_2_voice_on = {false,false,false,false,false,false,false}
---local jf_crow_on = {false,false,false,false,false,false,false}
 
 local dividers  = {[0] = 'OFF', '1/8', '1/4', '1/2', '3/4', '--', '3/2', '2x' } 
 
@@ -450,21 +439,12 @@ function ui.draw_waveform(x, y, params_data, ui_index, meta, lock)
 end
 
 function ui.draw_note(x, y, params_data, index, ui_index, lock)
-  --print("device", params_data.device)
   set_brightness(index, ui_index)
   screen.rect(x,  y, 20, 17)
   screen.fill()
   local offset = params_data.detune_cents and util.linlin(-100,100,-3,3, params_data.detune_cents) or 0
   screen.level(0)
-  if params_data.device == 7 and params:get("crow/output_quant") == 2 then
-      if ui_index == 2 then
-        screen.level(15)
-      else
-        screen.level(0)
-      end
-      screen.move(x + 9, y + 7)
-      screen.text_center("V")
-  elseif not params_data.chord or params_data.chord <= 0 then 
+  if not params_data.chord or params_data.chord <= 0 then 
       if ui_index == 2 then -- work out how to restrict this to the midi screen
         screen.level(15)
       else
@@ -494,15 +474,7 @@ function ui.draw_note(x, y, params_data, index, ui_index, lock)
 
   screen.level(lvl)
   screen.move(x + 9, y + 15)
-  if params_data.device == 7 and params:get("crow/output_quant") == 2 then -- or 8
-      local crow_out_1_offset_v = 0
-      if params:get("crow_pitch_range_1") == 2 then
-          crow_out_1_offset_v = -5
-      end
-      screen.text_center(string.format("%.1f",(params_data.note)/12 + crow_out_1_offset_v))
-  else
-      screen.text_center(oct ..  note_num_to_name(note_name):gsub('♯', '#'))
-  end
+  screen.text_center(oct ..  note_num_to_name(note_name):gsub('♯', '#'))
   screen.stroke()
  
 end
@@ -563,7 +535,7 @@ function ui.tile(index, name, value, ui_index, lock, custom)
     local value = string.sub(value, 2)
   end
 
-  --@chailight support display of additional JF, WSYN and lfo values
+  --@chailight support display of lfo values
   --if string.len(tostring(value)) > 4 then local value = util.round(value, 0.01) end
 
   if not string.match(value, "lfo") then
@@ -574,18 +546,6 @@ function ui.tile(index, name, value, ui_index, lock, custom)
             local disp_value = "--" 
             if value < 5 then 
                 disp_value = value 
-            elseif value == 5 and params:get("takt_jf") == 2 then 
-                disp_value = "JF" 
-            elseif value == 6 and params:get("takt_wsyn") == 2 then 
-                disp_value = "W/" 
-            elseif value == 7 and params:get("takt_crow") == 2 then 
-                disp_value = "CROW" 
-            elseif value == 8 and params:get("takt_crow") == 3 then 
-                disp_value = "CRW12" 
-            elseif value == 9 and params:get("takt_crow") == 3 then 
-                disp_value = "CRW34" 
-            elseif value == 10 and params:get("takt_crow") == 4 then 
-                disp_value = "JFCW" 
             elseif value == 11 and ui.nb_enabled then 
                 disp_value = "NB" 
             else
@@ -593,8 +553,6 @@ function ui.tile(index, name, value, ui_index, lock, custom)
             end
             value = disp_value 
             --print ("dev", value)
-          elseif name == "RN" or name == "RD" then
-            value = value * 10
           end
        end
   end
@@ -866,12 +824,6 @@ function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
       {12,cc_name(6), params_data.cc_6_val },
     }
     
-    local wsyn_on = false 
-    local crow_full_voice_on = false 
-    local crow_2_voice_on = false 
-    local jf_crow_on = false 
-        
-    
    for k, v in pairs(tile) do
         
       local lock = false
@@ -894,66 +846,31 @@ function ui.midi_screen(tr, params_data, ui_index, tracks, steps)
         else
             if nb_on and v[1] > 6 then
               v[3] = ui.nb_value(tr, params_data, v[1] - 6, v[3]) or '--'
-            elseif v[1]  > 3 and  v[3] < 0 and wsyn_on == false  then 
+            elseif v[1]  > 3 and  v[3] < 0 then 
               v[3] = '--' 
             elseif  v[1] == 3 then 
               v[3] = util.round(util.linlin(1, 256, 1, 16,v[3]),0.01)
             end
-            if v[1] == 5 and v[3] == 6 and params:get("takt_wsyn") == 2 then
-                wsyn_on = true
-                ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] == 5 and v[3] == 7 and params:get("takt_crow") == 2 then
-                crow_full_voice_on = true
-                ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] == 5 and v[3] == 8 and params:get("takt_crow") == 3 then
-                crow_2_voice_on = true
-                ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] == 5 and v[3] == 9 and params:get("takt_crow") == 3 then
-                crow_2_voice_on = true
-                ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] == 5 and v[3] == 10 and params:get("takt_crow") == 4 then
-                jf_crow_on = true
-                ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] > 6 and wsyn_on then 
-                ui.tile(v[1], wsyn_params_lookup[v[1]-5], v[3]/10, ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] > 6 and crow_full_voice_on then 
-                ui.tile(v[1], crow_full_voice_params_lookup[v[1]-5], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] > 6 and crow_2_voice_on then 
-                ui.tile(v[1], crow_2_voice_params_lookup[v[1]-5], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-            elseif v[1] > 6 and jf_crow_on then 
-                ui.tile(v[1], jf_crow_params_lookup[v[1]-5], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
+            local lfo_name = ""
+            local lfo_tile = 0 
+            for i = 1, 4 do
+                local target = params:get(i .. "lfo_target") 
+                local tile_offset = 6
+                --print("lfo", i, "target", target - 1 - ((tr - 8) * 10), "tile", v[1]-tile_offset)
+                -- only the CC tiles: the slots of the track before would match tiles 1-6.
+                -- an LFO that is off, or a step that locks the slot, leaves the value in charge
+                if v[1] > tile_offset and not lock and params:get(i .. "lfo") == 2
+                  and target - 1 - ((tr - 8) * 6) == (v[1] - tile_offset) then
+                    lfo_name = "lfo " .. i 
+                    lfo_tile = target - 1
+                    --print("lfo_tile", lfo_tile)
+                end
+            end
+            if lfo_tile > 0 then
+                ui.tile(v[1], v[2], lfo_name, ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
             else
-                local lfo_name = ""
-                local lfo_tile = 0 
-                for i = 1, 4 do
-                    local target = params:get(i .. "lfo_target") 
-                    local tile_offset = 6
-                    --if v[3] == 10 and params:get("takt_crow") == 4 then
-                    --if jf_crow_on[tr]  then
-                        --print("adjusting for crow output")
-                        --target = target - 6
-                        --tile_offset = 1
-                    --end
-                    --print("lfo", i, "target", target - 1 - ((tr - 8) * 10), "tile", v[1]-tile_offset)
-                    -- only the CC tiles: the slots of the track before would match tiles 1-6.
-                    -- an LFO that is off, or a step that locks the slot, leaves the value in charge
-                    if v[1] > tile_offset and not lock and params:get(i .. "lfo") == 2
-                      and target - 1 - ((tr - 8) * 6) == (v[1] - tile_offset) then -- adjust to allow for crow output labels
-                        lfo_name = "lfo " .. i 
-                        lfo_tile = target - 1
-                        --print("lfo_tile", lfo_tile)
-                    end
-                end
-                if lfo_tile > 0 then
-                    --if jf_crow_on[tr] then
-                    --    ui.tile(v[1]+5, v[2], lfo_name, ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-                    --else
-                    ui.tile(v[1], v[2], lfo_name, ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-                    --end
-                else
-                    ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
-                end
-           end
+                ui.tile(v[1], v[2], v[3], ui_index-1, lock , v[1] > 6 and v[1] + 6 or false)
+            end
         end
       end
     end

@@ -26,7 +26,7 @@
 - **64 patterns** with meta-sequencer for automatic pattern switching
 - **256 steps per track** (16 main steps × 16 substeps each)
 - **Per-step parameter locking** with full automation
-- **Multiple output types**: MIDI, Just Friends, w/syn, Crow CV
+- **Multiple output types**: MIDI and nb voices (which include Just Friends, w/syn and crow CV)
 - **Effects**: Delay, reverb, compressor (global)
 - **Modulation**: 4 main LFOs + 2 engine LFOs
 - **Real-time performance**: Grid-based triggering and recording
@@ -388,7 +388,6 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 **ui_index 1-19** for MIDI control:
 
 1. **Note**: MIDI note number (25-127)
-   - For Crow: 0-120 (raw voltage output)
 2. **Chord**: Chord type (-1 to 26)
    - -1 = Off (single note)
    - 0-25 = Various chord types (see [Chord Types](#chord-types))
@@ -441,13 +440,10 @@ Special parameters that control trigger behavior (ui_index -3 to 0):
 ### Output Devices
 
 1-4. **MIDI Devices 1-4**: Standard MIDI output ports
-5. **Just Friends**: i2c modular synth (via Crow)
-6. **w/syn**: WaveShaper synthesizer (via Crow i2c)
-7. **Crow**: CV output (4 channels, gate/pitch)
-8-10. **Crow "2 voices" and "jf + crow" modes**: shown as `CRW12`, `CRW34` and `JFCW`, but they do not produce output yet
+5-10. Not used. These were the built-in Just Friends, w/syn and crow outputs, which are now nb voices (see [Crow, Just Friends and w/syn](#crow-just-friends-and-wsyn))
 11. **NB**: an [nb](https://github.com/sixolet/nb) voice (only when the nb library is found)
 
-The encoder skips devices that are not enabled (5-10) or installed (11). A step that still points at one, for example in a project made with other settings, shows `--` and plays nothing.
+The encoder skips the devices that are not there: 5-10, and 11 when nb is not installed. A step that still points at one, for example in a project made with an earlier version, shows `--` and plays nothing.
 
 ### nb Voices
 
@@ -470,7 +466,7 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 
 *Default parameters*
 
-- Until you choose others, the six slots point at a default set for the voice. Emplaitress, nb_pp, nb_polyperc, doubledecker and nb_fluid have their own sets (listed in `lib/nb_defaults.lua`); other voices get their first continuous parameters.
+- Until you choose others, the six slots point at a default set for the voice. Emplaitress, nb_pp, nb_polyperc, doubledecker, nb_fluid, nb_crow and nb_wsyn have their own sets (listed in `lib/nb_defaults.lua`); other voices get their first continuous parameters.
 - Emplaitress has a set per model. Slots 1-4 are always model, harmonics, timbre and morph. Slots 5-6 are decay and lpg color, except on the models that have their own envelope and ignore those two (string, modal, kick, snare, hat), where they are aux mix and fm env.
 - When you change the voice's model to one with a different set, a track without trigs gets the new set. If the track has trigs and its slots hold values, chosen parameters or locks, a window asks first: **K2** takes the new model's parameters and clears the slots' values and locks, **K3** keeps the old ones. The check is made for the selected track while its screen is showing. A model set by a step lock doesn't count as a change.
 
@@ -490,6 +486,26 @@ The voice's own parameters appear at the end of PARAMS once it is selected. Note
 
 - A slot remembers the parameter you chose or gave a value, so a saved project keeps working when a voice gains parameters in an update.
 - Changing a track to another instance of the same voice (emplait 1 to emplait 2) keeps the slots. On a different kind of voice such a slot shows `--` and does nothing until you choose a parameter for it; slots you never touched follow the new voice's defaults.
+
+### Crow, Just Friends and w/syn
+
+Takt has no crow or i2c output code of its own. These are played as nb voices, from mods that are installed separately:
+
+| Hardware | Mod | Voices |
+|---|---|---|
+| Just Friends | [nb_jf](https://github.com/sixolet/nb_jf) | `jf n 1`-`jf n 6` (one channel each), `jf poly`, `jf unison`, `jf kit`, `jf mpe` |
+| crow CV | [nb_crow](https://github.com/sixolet/nb_crow) | `crow 1/2` and `crow 3/4` (pitch and envelope on an output pair), `crow para` |
+| w/syn | [nb_wsyn](https://github.com/sixolet/nb_wsyn) | `w/syn` |
+
+Set them up like any other nb voice (see [nb Voices](#nb-voices)): install the mod, enable it in SYSTEM > MODS, restart, choose the voice for the track and set the track's Device to `NB`.
+
+- The voice's parameters are at the end of PARAMS, and on the track's CC tiles. By default the tiles are attack, decay, sustain, release, portamento and decay shape for `crow 1/2` and `crow 3/4`, and curve, ramp, FM index, FM envelope, LPG time and LPG symmetry for `w/syn`; others (such as the FM ratio) can be picked for a tile. They can be locked per step and moved by the LFOs.
+- The Just Friends voices have few parameters of their own (slew, detune, or the trigger and allocation modes of `jf poly`), so most of their tiles show `--`.
+- The Just Friends voices set the module's i2c mode themselves when they are selected, so there is no "jf output" option to turn on.
+- Two tracks can play `crow 1/2` and `crow 3/4` for two CV voices. Several tracks with `jf n` voices share one Just Friends.
+- A project made with the earlier built-in outputs (devices 5-10: `JF`, `W/`, `CROW`, `CRW12`, `CRW34`, `JFCW`) loads, but those tracks show `--` and stay silent until their Device is set to `NB`. Their old w/syn CC values don't carry over.
+
+This path has been checked without the hardware only: on a norns with no crow connected, each voice sends the expected crow and i2c messages. Whether the modules respond as they should is untested. Please report what works and what doesn't.
 
 ### MIDI Recording
 
@@ -705,23 +721,8 @@ This section only appears when the [ledmap](https://github.com/andr-ew/ledmap) l
 
 **Access**: PARAMS > OUTPUTS
 
-**Device enables**:
-- **Crow output**: Off / Full voice / 2 voices / JF+Crow
-- **JF output**: Enable/disable Just Friends i2c
-- **w/syn output**: Enable/disable WaveShaper i2c
 - **MIDI input track**: Route external MIDI (0=grid focus, 1-14=specific)
-
-**Crow options** (group):
-- Output quantization (note/raw voltage)
-- Output 1-4 range (0-10V or ±5V)
-- Slew rate per output
-- Scale per output
-
-**w/syn options** (group):
-- AR mode (off/on)
-- Velocity, Curve, FM settings
-- Envelope parameters
-- Additional synthesis controls
+- **nb voices** (group): the nb voice of each MIDI track (see [nb Voices](#nb-voices))
 
 ### Clock Settings
 
