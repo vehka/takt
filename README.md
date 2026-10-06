@@ -44,21 +44,13 @@ This track will send out notes to the selected device.
 Note that when w/syn is selected, the UI updates to display various w/syn parameters. Currently these do nothing. You need to adjust w/syn via the Parameters page.
 Similarly, when crow is selected, the UI displays various parameters which currently do nothing. Watch this space for updates.
 
-MIDI CC LFO output
------------------
-This uses the hnds library by @justmat to provide additoinal LFO's for MIDI CC.
-You can select an LFO from the relevant section of the Parameters page
+LFO output
+----------
+Four LFOs (lib/lfos.lua, modelled on the norns lfo library) move the CC slots of the MIDI tracks, or the picked parameter of an nb voice.
+You can set them up in PARAMS > MODULATION > lfo 1-4: pick a target, a shape, a cycle (synced to the clock, or free in seconds), a center and a depth, and turn the LFO on.
 
-![docs](lib/lfo_selection.png)
+The target refers to the CC output "slot" on the MIDI page of a track, e.g. `CC1 8` is the first slot of track 8. You can still change the actual CC number to be whatever you want, e.g. CC 127, and the LFO assigned to that slot will continue to work.
 
-You can set the target of the LFO to be one of the 6 CC outputs for a given track, e.g. CC1 on track 8.
-
-![docs](lib/lfo_target.png)
-
-Note that the target number refers to the CC output "slot" on the MIDI page for that track. You can still change the actual CC number to be whatever you want, e.g. CC 127, and the LFO you assigned to that output position (e.g. 1) will continue to work.
-
-![docs](lib/lfo_output_slot.png)
-
-When you have an LFO assigned to a CC, you can't adjust the value of the CC manually.
+A step that locks the slot's value wins over the LFO until the track's next step without a lock. See USER_MANUAL.md for the details.
 
 
