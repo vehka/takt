@@ -1110,6 +1110,28 @@ local params_fx = {
 }
 
   
+-- an empty project: init() runs once, so params, metros and callbacks stay single
+local function new_project()
+  clock.transport.stop()
+  engine.noteOffAll()
+  kill_all_midi()
+  for k in pairs(data) do data[k] = nil end
+  data.pattern, data.ui_index, data.selected = 1, 1, { 1, false }
+  data.metaseq = { from = 1, to = 1, div = 1 }
+  data[1] = takt_utils.make_default_pattern()
+  pattern_name = 'new'
+  ptn_change_pending = false
+  reset_positions()
+  params:default()
+  redraw_params[1] = data[1][1].params[tostring(1)]
+  redraw_params[2] = redraw_params[1]
+  set_view(data.selected[1] < 8 and 'steps_engine' or 'steps_midi')
+  comp_shut(is_running)
+  if params:string("clock_source") == "internal" then
+    params:set("clock_tempo", data[1].bpm)
+  end
+end
+
 function init()
 
   for i = 1, 4 do
@@ -1130,7 +1152,7 @@ function init()
     params:add_trigger('load_p', "> Load project" )
     params:set_action('load_p', function(x) fileselect.enter(norns.state.data, load_project) end)
     params:add_trigger('new', "+ New" )
-    params:set_action('new', function(x) init() end)
+    params:set_action('new', function(x) new_project() end)
     params:add_separator()
     params:add{type = "option", id = "scale_mode", name = "scale mode",
         options = scale_names, default = 5,
