@@ -246,11 +246,13 @@ local function load_project(pth)
     if saved ~= nil then
       print("data found")
       pattern_name = saved[1] --@chailight set default pattern name to loaded pattern name
+      for k in pairs(data) do data[k] = nil end -- no patterns left over from before
       for k,v in pairs(saved[2]) do 
         data[k] = v
       end
       -- re-init metatables
-      for t = 1, #data do 
+      for t in pairs(data) do 
+        if type(t) == 'number' then
           for l = 1, 7 do
             for k = 1, 256 do
             data[t][l].params[k] = saved[2][t][l].params[k]
@@ -264,6 +266,7 @@ local function load_project(pth)
             setmetatable(data[t][l].params[k], {__index =  data[t][l].params[tostring(l)]})
             end
           end
+        end
         end
   
         if saved[1] then params:read(norns.state.data .. saved[1] .. ".pset") end
